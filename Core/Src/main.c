@@ -28,7 +28,31 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+/*********************************** Maquina de estados typedefs ****************************************/
+typedef enum {
+	STATE_WAITING_COM,
+    STATE_COM_OK,
+    STATE_CWMODE_OK,
+    STATE_CWJAP_OK,
+    STATE_CIPMUX_OK,
+	STATE_CIPSTART_OK
+} State_t;
 
+State_t currentState_global = STATE_WAITING_COM;
+State_t aux_state;
+
+typedef enum {
+	EVENT_WAITING_RESPONSE,
+    EVENT_OK_RESPONSE,
+    EVENT_CWMODE_OK,
+    EVENT_CWJAP_OK,
+    EVENT_CIPMUX_OK,
+    EVENT_CIPSTART_OK
+} Event_t;
+
+Event_t event_global=EVENT_WAITING_RESPONSE;
+Event_t aux_event;
+/*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -60,7 +84,31 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
+#define BUFFER_SIZE 100
+char rx_buffer[BUFFER_SIZE];
+char rx_data[BUFFER_SIZE];
+char tx_buffer[BUFFER_SIZE];
 
+volatile uint8_t flag_callback = 0;
+
+uint32_t time_out_response = 0;
+
+uint8_t flag_no_changing_state = 0;//Flag for no changing to the next state
+uint8_t flag_send_AT_command = 0;
+uint8_t flag_init_AT_com = 1;//Flag for starting AT communication
+
+uint8_t flag_receive = 0;
+uint8_t flag_time_out = 0;
+
+//uint8_t flag_aux_init = 1;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	flag_callback = 1;
+	if (huart->Instance == USART2){
+		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,HAL_MAX_DELAY);
+	}
+}
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -82,7 +130,131 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void clear_rx_buffer(void) {
+    memset(rx_buffer, 0, BUFFER_SIZE);
 
+    HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+}
+
+char comando_AT[]="AT\r\n";
+
+char comando_AT_CWMODE[]="AT+CWMODE=3\r\n";//Poner el ESP8266 en modo AP y conexión WIFI
+
+char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar el ESP8266 a la red WIFI
+
+char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
+
+char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+
+void handlestate(State_t currentState)
+{
+  time_out_response = HAL_GetTick();
+  aux_state=currentState_global;
+  //flag_receive = 0;
+  flag_no_changing_state=0;
+  switch (currentState) {
+  	  case STATE_WAITING_COM:
+  		  memset(tx_buffer, 0, BUFFER_SIZE);
+  		  strcpy(tx_buffer, comando_AT);//strcpy(destination, source);
+  		  flag_send_AT_command = 1;
+
+  		  if (event_global == EVENT_OK_RESPONSE) {
+  			  currentState_global = STATE_COM_OK;
+          }
+  		  break;
+
+  	  case STATE_COM_OK:
+       	  memset(tx_buffer, 0, BUFFER_SIZE);
+       	  strcpy(tx_buffer, comando_AT_CWMODE);
+       	  flag_send_AT_command = 1;
+
+          if (event_global == EVENT_CWMODE_OK){
+           	  currentState_global = STATE_CWMODE_OK;
+          }
+          break;
+
+      case STATE_CWMODE_OK:
+          memset(tx_buffer, 0, BUFFER_SIZE);
+      	  strcpy(tx_buffer, comando_AT_CWJAP);
+       	  flag_send_AT_command = 1;
+
+          if (event_global == EVENT_CWJAP_OK){
+           	  currentState_global = STATE_CWJAP_OK;
+          }
+          break;
+
+      case STATE_CWJAP_OK:
+      	  memset(tx_buffer, 0, BUFFER_SIZE);
+       	  strcpy(tx_buffer, comando_AT_CIPMUX);
+      	  flag_send_AT_command = 1;
+
+          if (event_global == EVENT_CIPMUX_OK){
+          	  currentState_global = STATE_CIPMUX_OK;
+          }
+          break;
+
+      case STATE_CIPMUX_OK:
+       	  memset(tx_buffer, 0, BUFFER_SIZE);
+       	  strcpy(tx_buffer, comando_AT_CIPSTART);
+
+          if (event_global == EVENT_CIPSTART_OK){
+           	  currentState_global = STATE_CIPSTART_OK;
+          }
+          break;
+
+      default:
+
+          break;
+  }
+
+  if((currentState_global==aux_state)||(event_global==EVENT_WAITING_RESPONSE)){
+	  flag_no_changing_state=1;
+  }
+  if(flag_init_AT_com==1){
+	  flag_init_AT_com = 0;
+  }
+}
+
+Event_t handle_event(State_t state)
+{
+	  //aux_event=event_global;
+	  switch (state) {
+			  case STATE_WAITING_COM:
+				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
+					  return EVENT_OK_RESPONSE;
+				  }
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+			  case STATE_COM_OK:
+				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
+					  return EVENT_CWMODE_OK;
+				  }
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+			  case STATE_CWMODE_OK:
+				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
+					  return EVENT_CWJAP_OK;
+				  }
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+			  case STATE_CWJAP_OK:
+				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
+					  return EVENT_CIPMUX_OK;
+				  }
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+			  case STATE_CIPMUX_OK:
+				  if (strcmp(rx_data,"\r\nCONNECT\r\n\nOK\r\n")==0) {
+					  return EVENT_CIPSTART_OK;
+				  }
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+			  default:
+				  return EVENT_WAITING_RESPONSE;
+				  break;
+		  }
+	  return EVENT_WAITING_RESPONSE;// Si no hay evento, pués esperando respuesta
+}
 /* USER CODE END 0 */
 
 /**
@@ -126,7 +298,7 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,6 +309,43 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+
+    if((flag_init_AT_com == 0)){
+    	event_global = handle_event(currentState_global);
+    	handlestate(currentState_global);
+    }
+
+    if(flag_send_AT_command == 1){
+    	printf("%s",tx_buffer);
+    	HAL_UART_Transmit(&huart2, (uint8_t*)tx_buffer,BUFFER_SIZE,HAL_MAX_DELAY);
+    	flag_send_AT_command = 0;
+    }
+
+    if(strcmp(rx_buffer,rx_data)!=0){
+    	memset(rx_data,0,BUFFER_SIZE);
+    	strcpy(rx_data,rx_buffer);
+    	memset(rx_buffer,0,BUFFER_SIZE);
+    	flag_receive = 1;
+    }
+
+    if(flag_receive==1){
+    	printf("%s",rx_data);
+    	flag_receive=0;
+    	event_global = handle_event(currentState_global);
+    	handlestate(currentState_global);
+    	memset(rx_data,0,BUFFER_SIZE);
+    }
+
+    if((flag_no_changing_state == 1)&&(HAL_GetTick()-time_out_response>5000)){
+    	flag_time_out = 1;
+    }
+
+    if(flag_time_out == 1){
+       	flag_time_out = 0;
+       	event_global = handle_event(currentState_global);
+       	handlestate(currentState_global);
+    }
+    HAL_Delay(6000);
   }
   /* USER CODE END 3 */
 }
