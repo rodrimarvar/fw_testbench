@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include<stdio.h>
 #include<string.h>
+#include <stddef.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -82,6 +83,8 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 #define BUFFER_SIZE 100
@@ -89,11 +92,11 @@ char rx_buffer[BUFFER_SIZE];
 char rx_data[BUFFER_SIZE];
 char tx_buffer[BUFFER_SIZE];
 
-volatile uint8_t flag_callback = 0;
+uint8_t *ptr_rx = &rx_buffer;
 
 uint32_t time_out_response = 0;
 
-uint8_t flag_no_changing_state = 0;//Flag for no changing to the next state
+uint8_t flag_no_changing_state = 0;//Flag for not changing to the next state
 uint8_t flag_send_AT_command = 0;
 uint8_t flag_init_AT_com = 1;//Flag for starting AT communication
 
@@ -104,9 +107,8 @@ uint8_t flag_time_out = 0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	flag_callback = 1;
 	if (huart->Instance == USART2){
-		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,HAL_MAX_DELAY);
+		//HAL_UART_Receive_DMA(&huart2,rx_buffer,BUFFER_SIZE);
 	}
 }
 /* USER CODE END PV */
@@ -115,6 +117,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2S3_Init(void);
@@ -133,7 +136,7 @@ void MX_USB_HOST_Process(void);
 void clear_rx_buffer(void) {
     memset(rx_buffer, 0, BUFFER_SIZE);
 
-    HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+    HAL_UART_Receive_DMA(&huart2,ptr_rx,BUFFER_SIZE);
 }
 
 char comando_AT[]="AT\r\n";
@@ -144,7 +147,7 @@ char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar 
 
 char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
 
-char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"10.165.23.187\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
 
 void handlestate(State_t currentState)
 {
@@ -196,6 +199,7 @@ void handlestate(State_t currentState)
       case STATE_CIPMUX_OK:
        	  memset(tx_buffer, 0, BUFFER_SIZE);
        	  strcpy(tx_buffer, comando_AT_CIPSTART);
+       	  flag_send_AT_command = 1;
 
           if (event_global == EVENT_CIPSTART_OK){
            	  currentState_global = STATE_CIPSTART_OK;
@@ -244,7 +248,7 @@ Event_t handle_event(State_t state)
 				  return EVENT_WAITING_RESPONSE;
 				  break;
 			  case STATE_CIPMUX_OK:
-				  if (strcmp(rx_data,"\r\nCONNECT\r\n\nOK\r\n")==0) {
+				  if (strcmp(rx_data,"\r\nCONNECT\r\n\r\nOK\r\n")==0) {
 					  return EVENT_CIPSTART_OK;
 				  }
 				  return EVENT_WAITING_RESPONSE;
@@ -255,6 +259,36 @@ Event_t handle_event(State_t state)
 		  }
 	  return EVENT_WAITING_RESPONSE;// Si no hay evento, pués esperando respuesta
 }
+
+
+
+int has_non_null_char(const char *str, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        if (str[i] != '\0') {
+            return i; // Encontró un carácter no nulo
+        }
+    }
+    return 0; // Todos los caracteres son nulos
+}
+
+void copy_from_first_non_null(char *dest, const char *src, size_t size) {
+    size_t i = 0;
+
+    // Buscar el primer carácter no nulo en la cadena de origen
+    while (i < size && src[i] == '\0') {
+        i++;  // Avanzar hasta encontrar el primer carácter no nulo
+    }
+
+    // Copiar a la cadena de destino a partir de ese carácter
+    size_t j = 0;
+    for (; i < size && src[i] != '\0'; i++, j++) {
+        dest[j] = src[i];
+    }
+
+    // Asegurarse de que la cadena de destino termine con '\0'
+    dest[j] = '\0';
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -289,6 +323,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
   MX_I2S2_Init();
   MX_I2S3_Init();
@@ -298,7 +333,11 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  HAL_UART_Receive_DMA(&huart2,ptr_rx,BUFFER_SIZE);
+
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -310,22 +349,26 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    if((flag_init_AT_com == 0)){
+    if((flag_init_AT_com == 1)){
     	event_global = handle_event(currentState_global);
     	handlestate(currentState_global);
     }
 
     if(flag_send_AT_command == 1){
     	printf("%s",tx_buffer);
-    	HAL_UART_Transmit(&huart2, (uint8_t*)tx_buffer,BUFFER_SIZE,HAL_MAX_DELAY);
+    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,BUFFER_SIZE);
     	flag_send_AT_command = 0;
     }
 
-    if(strcmp(rx_buffer,rx_data)!=0){
+    if(((strlen(rx_buffer)>0)||(has_non_null_char(rx_buffer, BUFFER_SIZE)!=0))&&(currentState_global!=STATE_CIPSTART_OK)){
     	memset(rx_data,0,BUFFER_SIZE);
-    	strcpy(rx_data,rx_buffer);
-    	memset(rx_buffer,0,BUFFER_SIZE);
+    	copy_from_first_non_null(rx_data, rx_buffer, BUFFER_SIZE);
+    	//memset(rx_buffer,0,BUFFER_SIZE);
     	flag_receive = 1;
+    }
+
+    if((has_non_null_char(rx_buffer, BUFFER_SIZE)!=0)&&(currentState_global==STATE_CIPSTART_OK)){
+    	printf("%s",rx_buffer);
     }
 
     if(flag_receive==1){
@@ -345,7 +388,7 @@ int main(void)
        	event_global = handle_event(currentState_global);
        	handlestate(currentState_global);
     }
-    HAL_Delay(6000);
+    HAL_Delay(2000);
   }
   /* USER CODE END 3 */
 }
@@ -666,6 +709,25 @@ static void MX_USART6_UART_Init(void)
   /* USER CODE BEGIN USART6_Init 2 */
 
   /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
