@@ -25,6 +25,7 @@
 #include<stdio.h>
 #include<string.h>
 #include <stddef.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -99,6 +100,10 @@ uint32_t time_out_response = 0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
+uint8_t flag_uart_interrupt = 0;
+uint8_t flag_cipsend = 0;
+uint8_t flag_cipsend_data = 0;
+
 uint8_t flag_no_changing_state = 0;//Flag for not changing to the next state
 uint8_t flag_send_AT_command = 0;
 uint8_t flag_init_AT_com = 1;//Flag for starting AT communication
@@ -106,13 +111,26 @@ uint8_t flag_init_AT_com = 1;//Flag for starting AT communication
 uint8_t flag_receive = 0;
 uint8_t flag_time_out = 0;
 
-//uint8_t flag_aux_init = 1;
+uint8_t flag_dma_finish = 0, flag_dma_working = 0;
+
+
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
-		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
+		//HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
 	}
+}
+
+void check_dma_transfer_complete(void) {
+	printf("dma_cechk\n");
+    if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
+        // Activar una bandera o procesar los datos
+    	flag_dma_finish = 1;
+
+        // Limpia el flag de transferencia completa
+        __HAL_DMA_CLEAR_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5);
+    }
 }
 /* USER CODE END PV */
 
@@ -406,9 +424,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  uint32_t main_delay = 0, time_cipsend = 0;
-  uint8_t flag_uart_interrupt = 0;
-  uint8_t flag_cipsend = 0;
+  uint32_t main_delay = 0, time_cipsend = 0, time_clean_rx_buffer = 0;
+
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
@@ -429,18 +446,36 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+    if((flag_dma_working == 1)&&(HAL_GetTick()-time_clean_rx_buffer>500)){
+    	time_clean_rx_buffer = HAL_GetTick();
+    	check_dma_transfer_complete();
+    	//printf("dma_cechk\n");
+    }
+
+    if(flag_dma_finish == 1){
+    	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
+    	tx_buffer_size = find_null_position(tx_buffer);
+
+    	if(rx_buffer_init != -1){
+    		rx_buffer_pos = rx_buffer_init + tx_buffer_size + 1;
+
+    		memset(rx_data,0,BUFFER_SIZE);
+    		copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
+
+    		memset(rx_buffer,0,BUFFER_SIZE);
+    		printf("%s.\n",rx_data);
+    		flag_dma_finish = 0;
+    		flag_dma_working = 0;
+    	}
+    }
 
     if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
     	main_delay = HAL_GetTick();
     	AT_communication_handler();
     	if(currentState_global==STATE_CIPSTART_OK){
     		memset(rx_buffer,0,BUFFER_SIZE);
+    		HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
     	}
-    }
-
-    if((currentState_global==STATE_CIPSTART_OK)&&(flag_uart_interrupt == 0)){
-    	HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    	flag_uart_interrupt = 1;
     }
 
     if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
@@ -453,18 +488,28 @@ int main(void)
     	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n",data_length);
     }
 
-    if(flag_cipsend == 1){
+    if((flag_cipsend == 1)&&(flag_cipsend_data == 0)&&(flag_dma_working == 0)){
+
     	tx_buffer_size = find_null_position(tx_buffer);
     	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-    	if (HAL_UART_Receive(&huart2, (uint8_t *)rx_buffer, BUFFER_SIZE, 2000) == HAL_OK) {
-    		sprintf(tx_buffer, "Hola Mundo");
+    	flag_dma_working = 1;
+
+    	flag_cipsend_data = 1;
+    	flag_cipsend = 0;
+    }
+
+    if((flag_cipsend_data == 1)&&(flag_dma_working == 0)){
+    	if(strcmp(rx_data,"\r\nOK\r\n> ")==0){
+    		strcpy(tx_buffer, "Hola Mundo");
     		tx_buffer_size = find_null_position(tx_buffer);
     		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-    	} else {
-    	    // No se han recibido datos
-    		printf("No se envio \"Hola Mundo\" correctamente\n");
+    		flag_dma_working = 1;
+
+    		flag_cipsend_data = 0;
     	}
-    	flag_cipsend = 0;
+
+    	printf("%s\n",tx_buffer);
+    	HAL_Delay(5000);
     }
 
     if((HAL_GetTick() - main_delay > 5000)&&(currentState_global==STATE_CIPSTART_OK)){
