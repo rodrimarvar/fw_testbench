@@ -511,22 +511,6 @@ int main(void)
     	printf("%s\n",tx_buffer);
     	HAL_Delay(5000);
     }
-
-    if((HAL_GetTick() - main_delay > 5000)&&(currentState_global==STATE_CIPSTART_OK)){
-        main_delay = HAL_GetTick();
-        //rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
-
-        /*
-        if(rx_buffer_init != -1){
-    	    rx_buffer_pos= rx_buffer_init + tx_buffer_size + 1;
-
-            memset(rx_data,0,BUFFER_SIZE);
-            copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
-
-            memset(rx_buffer,0,BUFFER_SIZE);
-            printf("%s\n",rx_data);
-        }*/
-    }
   }
   /* USER CODE END 3 */
 }
