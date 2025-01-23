@@ -91,10 +91,13 @@ DMA_HandleTypeDef hdma_usart2_tx;
 char rx_buffer[BUFFER_SIZE];
 char rx_data[BUFFER_SIZE];
 char tx_buffer[BUFFER_SIZE];
+char data_to_send[BUFFER_SIZE];
 
-uint8_t *ptr_rx = &rx_buffer;
+int data_length = 0;
 
 uint32_t time_out_response = 0;
+
+int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
 uint8_t flag_no_changing_state = 0;//Flag for not changing to the next state
 uint8_t flag_send_AT_command = 0;
@@ -108,7 +111,7 @@ uint8_t flag_time_out = 0;
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
 	}
 }
 /* USER CODE END PV */
@@ -133,10 +136,11 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void clear_rx_buffer(void) {
+void clear_rx_buffer(void)
+{
     memset(rx_buffer, 0, BUFFER_SIZE);
 
-    HAL_UART_Receive_DMA(&huart2,ptr_rx,BUFFER_SIZE);
+    HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 }
 
 char comando_AT[]="AT\r\n";
@@ -152,10 +156,13 @@ char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Com
 void handlestate(State_t currentState)
 {
   time_out_response = HAL_GetTick();
+
   aux_state=currentState_global;
-  //flag_receive = 0;
+
   flag_no_changing_state=0;
-  switch (currentState) {
+
+  switch (currentState)
+  {
   	  case STATE_WAITING_COM:
   		  memset(tx_buffer, 0, BUFFER_SIZE);
   		  strcpy(tx_buffer, comando_AT);//strcpy(destination, source);
@@ -214,9 +221,6 @@ void handlestate(State_t currentState)
   if((currentState_global==aux_state)||(event_global==EVENT_WAITING_RESPONSE)){
 	  flag_no_changing_state=1;
   }
-  if(flag_init_AT_com==1){
-	  flag_init_AT_com = 0;
-  }
 }
 
 Event_t handle_event(State_t state)
@@ -248,7 +252,10 @@ Event_t handle_event(State_t state)
 				  return EVENT_WAITING_RESPONSE;
 				  break;
 			  case STATE_CIPMUX_OK:
-				  if (strcmp(rx_data,"\r\nCONNECT\r\n\r\nOK\r\n")==0) {
+				  if (strcmp(rx_data,"CONNECT\r\n\r\nOK\r\n")==0) {
+					  return EVENT_CIPSTART_OK;
+				  }
+				  if (strcmp(rx_data,"ALREADY CONNECTED\r\n\r\nERROR\r\n")==0) {
 					  return EVENT_CIPSTART_OK;
 				  }
 				  return EVENT_WAITING_RESPONSE;
@@ -260,84 +267,29 @@ Event_t handle_event(State_t state)
 	  return EVENT_WAITING_RESPONSE;// Si no hay evento, pués esperando respuesta
 }
 
+//__attribute__((optimize("O0")))
+int find_first_non_null(const volatile char *str, int size)
+{
+	int i = 0;
+	while (i < size) {
+		printf("i = %d\n",i);
+		if (str[i] != '\0') {
+			return i; // Retorna la posición del primer carácter no nulo
+	    }
+	    i++;
+	}
 
-
-int has_non_null_char(const char *str, size_t size) {
-    for (size_t i = 0; i < size; i++) {
-        if (str[i] != '\0') {
-            return i; // Encontró un carácter no nulo
-        }
-    }
-    return 0; // Todos los caracteres son nulos
+    return -1;
 }
 
-void copy_from_first_non_null(char *dest, const char *src, size_t size) {
-    size_t i = 0;
-
-    // Buscar el primer carácter no nulo en la cadena de origen
-    while (i < size && src[i] == '\0') {
-        i++;  // Avanzar hasta encontrar el primer carácter no nulo
-    }
-
-    // Copiar a la cadena de destino a partir de ese carácter
-    size_t j = 0;
-    for (; i < size && src[i] != '\0'; i++, j++) {
-        dest[j] = src[i];
-    }
-
-    // Asegurarse de que la cadena de destino termine con '\0'
-    dest[j] = '\0';
-}
-
-void AT_comm_handler(void){
-		if((flag_init_AT_com == 1)){
-	    	event_global = handle_event(currentState_global);
-	    	handlestate(currentState_global);
-	    }
-
-	    if(flag_send_AT_command == 1){
-	    	printf("%s",tx_buffer);
-	    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,BUFFER_SIZE);
-	    	flag_send_AT_command = 0;
-	    }
-
-	    if(((strlen(rx_buffer)>0)||(has_non_null_char(rx_buffer, BUFFER_SIZE)!=0))&&(currentState_global!=STATE_CIPSTART_OK)){
-	    	memset(rx_data,0,BUFFER_SIZE);
-	    	copy_from_first_non_null(rx_data, rx_buffer, BUFFER_SIZE);
-	    	//memset(rx_buffer,0,BUFFER_SIZE);
-	    	flag_receive = 1;
-	    }
-
-	    if((has_non_null_char(rx_buffer, BUFFER_SIZE)!=0)&&(currentState_global==STATE_CIPSTART_OK)){
-	    	printf("%s",rx_buffer);
-	    }
-
-	    if(flag_receive==1){
-	    	printf("%s",rx_data);
-	    	flag_receive=0;
-	    	event_global = handle_event(currentState_global);
-	    	handlestate(currentState_global);
-	    	memset(rx_data,0,BUFFER_SIZE);
-	    }
-
-	    if((flag_no_changing_state == 1)&&(HAL_GetTick()-time_out_response>5000)){
-	    	flag_time_out = 1;
-	    }
-
-	    if(flag_time_out == 1){
-	       	flag_time_out = 0;
-	       	event_global = handle_event(currentState_global);
-	       	handlestate(currentState_global);
-	    }
-}
-
-int find_null_position(const char *str) {
+int find_null_position(const char *str)
+{
     if (str == NULL) {
         return -1; // Manejo de error si la cadena es NULL
     }
 
-    for (size_t i = 0; ; i++) {
-        if (str[i] == '\0') {
+    for (int i = 0; ; i++) {
+        if ((str[i] == '\0')&&(i !=0)) {
             return i; // Retorna la posición del carácter nulo
         }
     }
@@ -346,7 +298,70 @@ int find_null_position(const char *str) {
     return -1;
 }
 
+void copy_from_first_non_null(char *dest, const char *src, int size)
+{
+    int i = 0;
 
+    // Buscar el primer carácter no nulo en la cadena de origen
+    while (i < size && src[i] == '\0') {
+        i++;  // Avanzar hasta encontrar el primer carácter no nulo
+    }
+
+    // Copiar a la cadena de destino a partir de ese carácter
+    int j = 0;
+    for (; i < size && src[i] != '\0'; i++, j++) {
+        dest[j] = src[i];
+    }
+
+    // Asegurarse de que la cadena de destino termine con '\0'
+    dest[j] = '\0';
+}
+
+void AT_communication_handler(void)
+{
+	if((flag_init_AT_com == 1)){
+	   	event_global = handle_event(currentState_global);
+	   	handlestate(currentState_global);
+	   	flag_init_AT_com = 0;
+	}
+
+	if(flag_send_AT_command == 1){
+		tx_buffer_size = find_null_position(tx_buffer);
+	   	printf("%s",tx_buffer);
+	   	if(tx_buffer_size != -1){
+	   		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+	   		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
+	   	}
+	   	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
+	   	flag_send_AT_command = 0;
+	}
+
+	if((rx_buffer_init != -1)&&(currentState_global!=STATE_CIPSTART_OK)){
+		rx_buffer_pos = rx_buffer_init + tx_buffer_size + 1;
+	   	memset(rx_data,0,BUFFER_SIZE);
+	   	copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
+	   	memset(rx_buffer,0,BUFFER_SIZE);
+	   	flag_receive = 1;
+	}
+
+	if(flag_receive==1){
+	   	printf("%s",rx_data);
+	   	flag_receive=0;
+	   	event_global = handle_event(currentState_global);
+	   	handlestate(currentState_global);
+	   	memset(rx_data,0,BUFFER_SIZE);
+	}
+
+	if((flag_no_changing_state == 1)&&(HAL_GetTick()-time_out_response>1000)){
+	  	flag_time_out = 1;
+	}
+
+	if(flag_time_out == 1){
+	   	flag_time_out = 0;
+	   	event_global = handle_event(currentState_global);
+	   	handlestate(currentState_global);
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -391,16 +406,19 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  uint32_t main_delay = 0, time_cipsend = 0;
+  uint8_t flag_uart_interrupt = 0;
+  uint8_t flag_cipsend = 0;
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-  int rx_buffer_pos = 0;
-
   HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+
+  strcpy(tx_buffer, comando_AT);
+  strcpy(data_to_send, "Hola Mundo!");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -412,54 +430,58 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    /*if((flag_init_AT_com == 1)){
-    	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)comando_AT,strlen(comando_AT));
-    	HAL_Delay(50);
-    	printf("%s",rx_buffer);
-    	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)comando_AT,strlen(comando_AT));
-    	HAL_Delay(50);
-    	printf("%s",rx_buffer);
-    	flag_init_AT_com = 0;
-    }*/
-
-    if((HAL_GetTick()-time_out_response>3000)){
-        time_out_response = HAL_GetTick();
-        HAL_UART_Transmit_DMA(&huart2,(uint8_t *)comando_AT,sizeof(comando_AT));
-        HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,100);
-        rx_buffer_pos=find_null_position(rx_buffer);
-        if(find_null_position(rx_buffer)!=-1){
-        	printf("La ultima posicion del rx_buffer es: %d. Y es: %c\n",rx_buffer_pos,rx_buffer[rx_buffer_pos]);
-        }
-        copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos+1], (BUFFER_SIZE-(rx_buffer_pos+1)));
-        printf("%s",comando_AT);
-        printf("%s",rx_data);
-    }
-    /*
-    if((HAL_GetTick()-time_out_response>3000)){
-    	flag_time_out = 1;
-    	time_out_response = HAL_GetTick();
+    if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
+    	main_delay = HAL_GetTick();
+    	AT_communication_handler();
+    	if(currentState_global==STATE_CIPSTART_OK){
+    		memset(rx_buffer,0,BUFFER_SIZE);
+    	}
     }
 
-    if(flag_time_out==1){
-    	printf("%s",comando_AT);
-    	HAL_Delay(10);
-    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)comando_AT,strlen(comando_AT));
-    	flag_time_out = 0;
+    if((currentState_global==STATE_CIPSTART_OK)&&(flag_uart_interrupt == 0)){
+    	HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+    	flag_uart_interrupt = 1;
     }
 
-    if(((strlen(rx_buffer)>0)||(has_non_null_char(rx_buffer, BUFFER_SIZE)!=0))){
-    	flag_receive = 1;
-    	memset(rx_data,0,BUFFER_SIZE);
-    	HAL_Delay(10);
-       	copy_from_first_non_null(rx_data, rx_buffer, BUFFER_SIZE);
-       	HAL_Delay(10);
-       	printf("%s\n",rx_data);
+    if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
+    	time_cipsend = HAL_GetTick();
+    	flag_cipsend = 1;
+
+    	data_length = find_null_position(data_to_send);
+
+    	memset(tx_buffer,0,BUFFER_SIZE);
+    	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n",data_length);
     }
-    HAL_Delay(2000);*/
+
+    if(flag_cipsend == 1){
+    	tx_buffer_size = find_null_position(tx_buffer);
+    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+    	if (HAL_UART_Receive(&huart2, (uint8_t *)rx_buffer, BUFFER_SIZE, 2000) == HAL_OK) {
+    		sprintf(tx_buffer, "Hola Mundo");
+    		tx_buffer_size = find_null_position(tx_buffer);
+    		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+    	} else {
+    	    // No se han recibido datos
+    		printf("No se envio \"Hola Mundo\" correctamente\n");
+    	}
+    	flag_cipsend = 0;
+    }
+
+    if((HAL_GetTick() - main_delay > 5000)&&(currentState_global==STATE_CIPSTART_OK)){
+        main_delay = HAL_GetTick();
+        //rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
+
+        /*
+        if(rx_buffer_init != -1){
+    	    rx_buffer_pos= rx_buffer_init + tx_buffer_size + 1;
+
+            memset(rx_data,0,BUFFER_SIZE);
+            copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
+
+            memset(rx_buffer,0,BUFFER_SIZE);
+            printf("%s\n",rx_data);
+        }*/
+    }
   }
   /* USER CODE END 3 */
 }
