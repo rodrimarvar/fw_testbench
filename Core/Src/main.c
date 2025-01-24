@@ -60,6 +60,10 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
 typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
+typedef enum {SEND_TX, PROCESS_RX, WAIT}action_t;
+
+action_t global_action = WAIT;
+
 response_t type_of_response = EMPTY;
 response_t *response_array;
 
@@ -116,7 +120,6 @@ Bool flag_cipsend_data = 0;
 
 Bool flag_no_changing_state = 0;//Flag for not changing to the next state
 Bool flag_send_AT_command = 0;
-Bool flag_init_AT_com = 1;//Flag for starting AT communication
 
 Bool flag_receive = 0;
 Bool flag_time_out = 0;
@@ -127,6 +130,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
 		//HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
 
@@ -179,44 +183,6 @@ char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single con
 
 char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
 
-char **split_lines(const char *buffer, int *line_count) {
-    char **lines = NULL;
-    int count = 0;
-    const char *start = buffer;
-    const char *end;
-
-    while ((end = strchr(start, '\n')) != NULL) {
-        size_t line_length = end - start;
-        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
-        if (lines == NULL) {
-            printf("Error: No se pudo asignar memoria.\n");
-            return NULL;
-        }
-        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
-        if (lines[count] == NULL) {
-            printf("Error: No se pudo asignar memoria para la línea %d.\n", count);
-            return NULL;
-        }
-        strncpy(lines[count], start, line_length);
-        lines[count][line_length] = '\0'; // Asegurar terminación nula
-        count++;
-        start = end + 1; // Continuar después de '\n'
-    }
-
-    // Añadir la última línea si no termina en '\n'
-    if (*start != '\0') {
-        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
-        size_t line_length = strlen(start);
-        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
-        strncpy(lines[count], start, line_length);
-        lines[count][line_length] = '\0';
-        count++;
-    }
-
-    *line_count = count;
-    return lines;
-}
-
 void handlestate(State_t currentState)
 {
   time_out_response = HAL_GetTick();
@@ -234,6 +200,7 @@ void handlestate(State_t currentState)
 
   		  if (event_global == EVENT_OK_RESPONSE) {
   			  currentState_global = STATE_COM_OK;
+  			  //global_action = SEND_TX;
           }
   		  break;
 
@@ -331,6 +298,45 @@ Event_t handle_event(State_t state)
 	  return EVENT_WAITING_RESPONSE;// Si no hay evento, pués esperando respuesta
 }
 
+char **split_lines(const char *buffer, int *line_count)
+{
+    char **lines = NULL;
+    int count = 0;
+    const char *start = buffer;
+    const char *end;
+
+    while ((end = strchr(start, '\n')) != NULL) {
+        size_t line_length = end - start;
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        if (lines == NULL) {
+            printf("Error: No se pudo asignar memoria.\n");
+            return NULL;
+        }
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        if (lines[count] == NULL) {
+            printf("Error: No se pudo asignar memoria para la línea %d.\n", count);
+            return NULL;
+        }
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0'; // Asegurar terminación nula
+        count++;
+        start = end + 1; // Continuar después de '\n'
+    }
+
+    // Añadir la última línea si no termina en '\n'
+    if (*start != '\0') {
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        size_t line_length = strlen(start);
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0';
+        count++;
+    }
+
+    *line_count = count;
+    return lines;
+}
+
 //__attribute__((optimize("O0")))
 int find_first_non_null(const char *str, int size)
 {
@@ -381,9 +387,9 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
     dest[j] = '\0';
 }
 
-void process_responses() // time duration, between 1 and 2 milisecond
+void generate_responses() // time duration, between 1 and 2 milisecond
 {
-	printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
+	//printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
 	int rx_data_length = strlen(rx_data)+1;
 
 	if(rx_data_length==0){
@@ -450,6 +456,11 @@ void process_responses() // time duration, between 1 and 2 milisecond
 	    	if((no_null == 0)&&(strlen(lines[i])!=0)) {
 	    		printf("Linea %d respuesta desconocida\n",i+1);
 	    		response_array[i] = UNKNOWN;
+	    		no_null=1;
+	    	}
+
+	    	if(no_null==1){
+	    		type_of_response = response_array[i];
 	    	}
 	        free(lines[i]); // Liberar cada línea
 	    }
@@ -458,16 +469,11 @@ void process_responses() // time duration, between 1 and 2 milisecond
 
     memset(rx_data,0,BUFFER_SIZE);
     number_of_lines_in_response = 0;
-    printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
+    //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
 void AT_communication_handler(void)
 {
-	if((flag_init_AT_com == 1)){
-	   	event_global = handle_event(currentState_global);
-	   	handlestate(currentState_global);
-	   	flag_init_AT_com = 0;
-	}
 
 	if(flag_send_AT_command == 1){
 		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
@@ -490,7 +496,7 @@ void AT_communication_handler(void)
 
 	if(flag_receive==1){
 	   	printf("%s",rx_data);
-	   	process_responses();
+	   	generate_responses();
 	   	flag_receive=0;
 	   	event_global = handle_event(currentState_global);
 	   	handlestate(currentState_global);
@@ -505,6 +511,34 @@ void AT_communication_handler(void)
 	   	flag_time_out = 0;
 	   	event_global = handle_event(currentState_global);
 	   	handlestate(currentState_global);
+	}
+
+}
+
+void process_responses(){
+
+}
+
+void send_tx(){
+	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+	printf("%s",tx_buffer);
+	if(tx_buffer_size != -1){
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+	}
+}
+
+void get_responses(){
+	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
+
+	if(rx_buffer_init != -1){
+
+	    memset(rx_data,0,BUFFER_SIZE);
+	    copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
+
+	    memset(rx_buffer,0,BUFFER_SIZE);
+	    printf("%s.\n",rx_data);
+	    generate_responses();
 	}
 }
 /* USER CODE END 0 */
@@ -559,10 +593,17 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-  HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+
 
   strcpy(tx_buffer, comando_AT);
   strcpy(data_to_send, "Hola Mundo!");
+
+  send_tx();
+
+  //event_global = handle_event(currentState_global);
+  //handlestate(currentState_global);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -573,34 +614,35 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((flag_dma_working == 1)&&(HAL_GetTick()-time_clean_rx_buffer>500)){
+    if((HAL_GetTick()-time_clean_rx_buffer>3000)){
     	time_clean_rx_buffer = HAL_GetTick();
+
+    	send_tx();
+
+    	flag_dma_working = 1;
+    }
+
+    if((flag_dma_working == 1)&&(HAL_GetTick()-main_delay>1000)){
+    	main_delay = HAL_GetTick();
+
     	check_dma_transfer_complete();
-    	//printf("dma_cechk\n");
+
+    	printf("dma_cechk\n");
     }
 
     if(flag_dma_finish == 1){
-    	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
-    	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-
-    	if(rx_buffer_init != -1){
-    		rx_buffer_pos = rx_buffer_init + tx_buffer_size + 1;
-
-    		memset(rx_data,0,BUFFER_SIZE);
-    		copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
-
-    		memset(rx_buffer,0,BUFFER_SIZE);
-    		printf("%s.\n",rx_data);
-    		process_responses();
-
+    	get_responses();
+    	if(response_array!=NULL){
     		flag_dma_finish = 0;
     		flag_dma_working = 0;
+
+    		free(response_array);
     	}
     }
 
 
 
-
+    /*
     if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
     	main_delay = HAL_GetTick();
     	AT_communication_handler();
@@ -608,7 +650,7 @@ int main(void)
     		memset(rx_buffer,0,BUFFER_SIZE);
     		HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
     	}
-    }
+    }*/
 
     /*if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
     	time_cipsend = HAL_GetTick();
