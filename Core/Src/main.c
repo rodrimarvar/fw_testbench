@@ -22,10 +22,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include<stdio.h>
-#include<string.h>
+#include <stdio.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <malloc.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,6 +55,15 @@ typedef enum {
 
 Event_t event_global=EVENT_WAITING_RESPONSE;
 Event_t aux_event;
+
+typedef enum { FALSE = 0, TRUE = 1 } Bool;
+
+typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
+
+response_t type_of_response = EMPTY;
+response_t *response_array;
+
+int number_of_lines_in_response = 0;
 /*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
 
@@ -100,20 +110,18 @@ uint32_t time_out_response = 0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
-uint8_t flag_uart_interrupt = 0;
-uint8_t flag_cipsend = 0;
-uint8_t flag_cipsend_data = 0;
+Bool flag_uart_interrupt = 0;
+Bool flag_cipsend = 0;
+Bool flag_cipsend_data = 0;
 
-uint8_t flag_no_changing_state = 0;//Flag for not changing to the next state
-uint8_t flag_send_AT_command = 0;
-uint8_t flag_init_AT_com = 1;//Flag for starting AT communication
+Bool flag_no_changing_state = 0;//Flag for not changing to the next state
+Bool flag_send_AT_command = 0;
+Bool flag_init_AT_com = 1;//Flag for starting AT communication
 
-uint8_t flag_receive = 0;
-uint8_t flag_time_out = 0;
+Bool flag_receive = 0;
+Bool flag_time_out = 0;
 
-uint8_t flag_dma_finish = 0, flag_dma_working = 0;
-
-
+Bool flag_dma_finish = 0, flag_dma_working = 0;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -170,6 +178,44 @@ char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar 
 char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
 
 char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+
+char **split_lines(const char *buffer, int *line_count) {
+    char **lines = NULL;
+    int count = 0;
+    const char *start = buffer;
+    const char *end;
+
+    while ((end = strchr(start, '\n')) != NULL) {
+        size_t line_length = end - start;
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        if (lines == NULL) {
+            printf("Error: No se pudo asignar memoria.\n");
+            return NULL;
+        }
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        if (lines[count] == NULL) {
+            printf("Error: No se pudo asignar memoria para la línea %d.\n", count);
+            return NULL;
+        }
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0'; // Asegurar terminación nula
+        count++;
+        start = end + 1; // Continuar después de '\n'
+    }
+
+    // Añadir la última línea si no termina en '\n'
+    if (*start != '\0') {
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        size_t line_length = strlen(start);
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0';
+        count++;
+    }
+
+    *line_count = count;
+    return lines;
+}
 
 void handlestate(State_t currentState)
 {
@@ -335,6 +381,86 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
     dest[j] = '\0';
 }
 
+void process_responses() // time duration, between 1 and 2 milisecond
+{
+	printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
+	int rx_data_length = strlen(rx_data)+1;
+
+	if(rx_data_length==0){
+		type_of_response = EMPTY;
+		return;
+	}
+
+	for(int i=0;i < rx_data_length;i++){
+		if(rx_data[i] == '\n'){
+			number_of_lines_in_response++;
+		}
+	}
+
+	char **lines = split_lines(rx_data, &number_of_lines_in_response);
+
+	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
+
+	    // Imprimir las líneas separadas
+	if (lines != NULL) {
+	    for (int i = 0; i < number_of_lines_in_response; i++) {
+	    	printf("Linea %d: %s\n", i + 1, lines[i]);
+	    	Bool no_null=0;
+	    	if (strstr(lines[i], "CONNECT") != NULL) {
+	    		printf("Linea %d contiene: CONNECT\n",i+1);
+	    		response_array[i] = CONNECT;
+	    		no_null=1;
+	    	}
+
+	    	if (strstr(lines[i], "CLOSED") != NULL) {
+	    		printf("Linea %d contiene: CLOSED\n",i+1);
+	    		response_array[i] = CLOSED;
+	    		no_null=1;
+	    	}
+
+	    	if (strstr(lines[i], "OK") != NULL) {
+	    		printf("Linea %d contiene: OK\n",i+1);
+	    		response_array[i] = OK;
+	    		no_null=1;
+	    	}
+
+	    	if (lines[i]== NULL) {
+	    		printf("Linea %d vacia\n",i+1);
+	    		response_array[i] = EMPTY;
+	    		no_null=1;
+	    	}
+
+	    	if (strstr(lines[i], "ERROR") != NULL) {
+	    		printf("Linea %d Error en el comando\n",i+1);
+	    		response_array[i] = ERR;
+	    		no_null=1;
+	    	}
+
+	    	if(strstr(lines[i], "busy") != NULL) {
+	    		printf("Linea %d ESP8266 ocupado\n",i+1);
+	    		response_array[i] = BUSY;
+	    		no_null=1;
+	    	}
+
+	    	if (strstr(lines[i], "AT") != NULL){
+	    		printf("Linea %d Respuesta echo del ESP8266\n",i+1);
+	    		response_array[i] = AT;
+	    		no_null=1;
+	    	}
+	    	if((no_null == 0)&&(strlen(lines[i])!=0)) {
+	    		printf("Linea %d respuesta desconocida\n",i+1);
+	    		response_array[i] = UNKNOWN;
+	    	}
+	        free(lines[i]); // Liberar cada línea
+	    }
+	    free(lines); // Liberar el array de punteros
+	}
+
+    memset(rx_data,0,BUFFER_SIZE);
+    number_of_lines_in_response = 0;
+    printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
+}
+
 void AT_communication_handler(void)
 {
 	if((flag_init_AT_com == 1)){
@@ -364,6 +490,7 @@ void AT_communication_handler(void)
 
 	if(flag_receive==1){
 	   	printf("%s",rx_data);
+	   	process_responses();
 	   	flag_receive=0;
 	   	event_global = handle_event(currentState_global);
 	   	handlestate(currentState_global);
@@ -464,10 +591,15 @@ int main(void)
 
     		memset(rx_buffer,0,BUFFER_SIZE);
     		printf("%s.\n",rx_data);
+    		process_responses();
+
     		flag_dma_finish = 0;
     		flag_dma_working = 0;
     	}
     }
+
+
+
 
     if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
     	main_delay = HAL_GetTick();
@@ -478,7 +610,7 @@ int main(void)
     	}
     }
 
-    if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
+    /*if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
     	time_cipsend = HAL_GetTick();
     	flag_cipsend = 1;
 
@@ -510,7 +642,7 @@ int main(void)
 
     	printf("%s\n",tx_buffer);
     	HAL_Delay(5000);
-    }
+    }*/
   }
   /* USER CODE END 3 */
 }
