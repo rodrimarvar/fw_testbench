@@ -60,9 +60,9 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
 typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
-typedef enum {SEND_TX, PROCESS_RX, WAIT}action_t;
+typedef enum {SEND_TX, SENT_TX, RX_RECEIVED, PROCESSED_RX, WAITING}action_t;
 
-action_t global_action = WAIT;
+action_t global_action = WAITING;
 
 response_t type_of_response = EMPTY;
 response_t *response_array;
@@ -110,7 +110,7 @@ char data_to_send[BUFFER_SIZE];
 
 int data_length = 0;
 
-uint32_t time_out_response = 0;
+uint32_t cipstart_delay = 3000;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
@@ -118,13 +118,14 @@ Bool flag_uart_interrupt = 0;
 Bool flag_cipsend = 0;
 Bool flag_cipsend_data = 0;
 
-Bool flag_no_changing_state = 0;//Flag for not changing to the next state
-Bool flag_send_AT_command = 0;
+void DMA1_Stream5_IRQHandler(void)
+{
+    // Llama al manejador del HAL para procesar eventos estándar
+    HAL_DMA_IRQHandler(&hdma_usart2_rx);
 
-Bool flag_receive = 0;
-Bool flag_time_out = 0;
-
-Bool flag_dma_finish = 0, flag_dma_working = 0;
+    // Tu código personalizado
+    global_action = WAITING;
+}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -134,15 +135,16 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 }
 
-void check_dma_transfer_complete(void) {
-	printf("dma_cechk\n");
+action_t check_dma_transfer_complete(void) {
+	printf("dma_check\n");
     if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
         // Activar una bandera o procesar los datos
-    	flag_dma_finish = 1;
-    	printf("flag_dma_finish = %d\n",flag_dma_finish);
+
         // Limpia el flag de transferencia completa
         __HAL_DMA_CLEAR_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5);
+        return RX_RECEIVED;
     }
+    return WAITING;
 }
 /* USER CODE END PV */
 
@@ -166,12 +168,6 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void clear_rx_buffer(void)
-{
-    memset(rx_buffer, 0, BUFFER_SIZE);
-
-    HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-}
 
 char comando_AT[]="AT\r\n";
 
@@ -185,73 +181,83 @@ char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Com
 
 void handlestate(State_t currentState)
 {
-  time_out_response = HAL_GetTick();
+  int length_response_array;
 
-  aux_state=currentState_global;
-
-  flag_no_changing_state=0;
+  if(response_array!=NULL){
+	  length_response_array = sizeof(response_array)/sizeof(response_t);
+  }
+  else{
+	  length_response_array = 0;
+  }
 
   switch (currentState)
   {
   	  case STATE_WAITING_COM:
   		  memset(tx_buffer, 0, BUFFER_SIZE);
   		  strcpy(tx_buffer, comando_AT);//strcpy(destination, source);
-  		  flag_send_AT_command = 1;
 
-  		  if (event_global == EVENT_OK_RESPONSE) {
-  			  currentState_global = STATE_COM_OK;
-  			  //global_action = SEND_TX;
-          }
+  		  for(int i=0;i < length_response_array;i++){
+  			if (response_array[i] == OK) {
+  				currentState_global = STATE_COM_OK;
+  			}
+  		  }
+
   		  break;
 
   	  case STATE_COM_OK:
        	  memset(tx_buffer, 0, BUFFER_SIZE);
        	  strcpy(tx_buffer, comando_AT_CWMODE);
-       	  flag_send_AT_command = 1;
 
-          if (event_global == EVENT_CWMODE_OK){
-           	  currentState_global = STATE_CWMODE_OK;
-          }
+       	  for(int i=0;i < length_response_array;i++){
+       		  if (response_array[i] == OK) {
+       			  currentState_global = STATE_CWMODE_OK;
+       	  	  }
+       	  }
+
           break;
 
       case STATE_CWMODE_OK:
           memset(tx_buffer, 0, BUFFER_SIZE);
       	  strcpy(tx_buffer, comando_AT_CWJAP);
-       	  flag_send_AT_command = 1;
 
-          if (event_global == EVENT_CWJAP_OK){
-           	  currentState_global = STATE_CWJAP_OK;
-          }
-          break;
+      	  for(int i=0;i < length_response_array;i++){
+      	      if (response_array[i] == OK) {
+      	    	  currentState_global = STATE_CWJAP_OK;
+      	      }
+      	  }
+
+      	  break;
 
       case STATE_CWJAP_OK:
       	  memset(tx_buffer, 0, BUFFER_SIZE);
        	  strcpy(tx_buffer, comando_AT_CIPMUX);
-      	  flag_send_AT_command = 1;
 
-          if (event_global == EVENT_CIPMUX_OK){
-          	  currentState_global = STATE_CIPMUX_OK;
-          }
+       	  for(int i=0;i < length_response_array;i++){
+       	      if (response_array[i] == OK) {
+       	    	  currentState_global = STATE_CIPMUX_OK;
+       	      }
+       	  }
+
           break;
 
       case STATE_CIPMUX_OK:
        	  memset(tx_buffer, 0, BUFFER_SIZE);
        	  strcpy(tx_buffer, comando_AT_CIPSTART);
-       	  flag_send_AT_command = 1;
 
-          if (event_global == EVENT_CIPSTART_OK){
-           	  currentState_global = STATE_CIPSTART_OK;
-          }
+       	  for(int i=0;i < length_response_array;i++){
+       	      if (response_array[i] == CONNECT) {
+       	    	  currentState_global = STATE_CIPSTART_OK;
+       	      }
+       	  }
+
           break;
 
       default:
 
           break;
   }
-
-  if((currentState_global==aux_state)||(event_global==EVENT_WAITING_RESPONSE)){
-	  flag_no_changing_state=1;
-  }
+  global_action = SEND_TX;
+  free(response_array);
 }
 
 Event_t handle_event(State_t state)
@@ -472,54 +478,43 @@ void generate_responses() // time duration, between 1 and 2 milisecond
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-void AT_communication_handler(void)
+void AT_communication_handler(const action_t action)
 {
+	switch(action){
+		case SEND_TX:
+			if(currentState_global==STATE_CIPMUX_OK){
+				HAL_Delay(3000);
+			}
+			send_tx();
+			global_action = SENT_TX;
 
-	if(flag_send_AT_command == 1){
-		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	   	printf("%s",tx_buffer);
-	   	if(tx_buffer_size != -1){
-	   		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-	   		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
-	   	}
-	   	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
-	   	flag_send_AT_command = 0;
+			break;
+
+		case SENT_TX:
+			global_action = check_dma_transfer_complete();
+			break;
+
+		case WAITING:
+			global_action = check_dma_transfer_complete();
+			break;
+
+		case RX_RECEIVED:
+			get_responses();
+			global_action = PROCESSED_RX;
+			break;
+
+		case PROCESSED_RX:
+			if(currentState_global!=STATE_CIPSTART_OK){
+				handlestate(currentState_global);
+				printf("\n\nEstados\n\n");
+			}
+
+			break;
 	}
-
-	if((rx_buffer_init != -1)&&(currentState_global!=STATE_CIPSTART_OK)){
-		rx_buffer_pos = rx_buffer_init + tx_buffer_size + 1;
-	   	memset(rx_data,0,BUFFER_SIZE);
-	   	copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
-	   	memset(rx_buffer,0,BUFFER_SIZE);
-	   	flag_receive = 1;
-	}
-
-	if(flag_receive==1){
-	   	printf("%s",rx_data);
-	   	generate_responses();
-	   	flag_receive=0;
-	   	event_global = handle_event(currentState_global);
-	   	handlestate(currentState_global);
-	   	memset(rx_data,0,BUFFER_SIZE);
-	}
-
-	if((flag_no_changing_state == 1)&&(HAL_GetTick()-time_out_response>1000)){
-	  	flag_time_out = 1;
-	}
-
-	if(flag_time_out == 1){
-	   	flag_time_out = 0;
-	   	event_global = handle_event(currentState_global);
-	   	handlestate(currentState_global);
-	}
-
 }
 
-void process_responses(){
 
-}
-
-void send_tx(){
+void send_tx(void){
 	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
 	printf("%s",tx_buffer);
 	if(tx_buffer_size != -1){
@@ -528,7 +523,7 @@ void send_tx(){
 	}
 }
 
-void get_responses(){
+void get_responses(void){
 	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
 
 	if(rx_buffer_init != -1){
@@ -585,7 +580,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  uint32_t main_delay = 0, time_cipsend = 0, time_clean_rx_buffer = 0;
+  uint32_t time_communication_handling = 0;
+
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
@@ -594,16 +590,12 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
   HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 
 
   strcpy(tx_buffer, comando_AT);
   strcpy(data_to_send, "Hola Mundo!");
 
   send_tx();
-
-  //event_global = handle_event(currentState_global);
-  //handlestate(currentState_global);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -614,33 +606,10 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((HAL_GetTick()-time_clean_rx_buffer>3000)){
-    	time_clean_rx_buffer = HAL_GetTick();
-
-    	send_tx();
-
-    	flag_dma_working = 1;
+    if((HAL_GetTick()-time_communication_handling>500)){
+    	time_communication_handling = HAL_GetTick();
+    	AT_communication_handler(global_action);
     }
-
-    if((flag_dma_working == 1)&&(HAL_GetTick()-main_delay>1000)){
-    	main_delay = HAL_GetTick();
-
-    	check_dma_transfer_complete();
-
-    	printf("dma_cechk\n");
-    }
-
-    if(flag_dma_finish == 1){
-    	get_responses();
-    	if(response_array!=NULL){
-    		flag_dma_finish = 0;
-    		flag_dma_working = 0;
-
-    		free(response_array);
-    	}
-    }
-
-
 
     /*
     if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
