@@ -610,50 +610,6 @@ int main(void)
     	time_communication_handling = HAL_GetTick();
     	AT_communication_handler(global_action);
     }
-
-    /*
-    if((HAL_GetTick() - main_delay > 5000)&&(currentState_global!=STATE_CIPSTART_OK)){
-    	main_delay = HAL_GetTick();
-    	AT_communication_handler();
-    	if(currentState_global==STATE_CIPSTART_OK){
-    		memset(rx_buffer,0,BUFFER_SIZE);
-    		HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    	}
-    }*/
-
-    /*if((currentState_global==STATE_CIPSTART_OK)&&(HAL_GetTick() - time_cipsend > 5000)){
-    	time_cipsend = HAL_GetTick();
-    	flag_cipsend = 1;
-
-    	data_length = find_null_position(data_to_send, BUFFER_SIZE);
-
-    	memset(tx_buffer,0,BUFFER_SIZE);
-    	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n",data_length);
-    }
-
-    if((flag_cipsend == 1)&&(flag_cipsend_data == 0)&&(flag_dma_working == 0)){
-
-    	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-    	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-    	flag_dma_working = 1;
-
-    	flag_cipsend_data = 1;
-    	flag_cipsend = 0;
-    }
-
-    if((flag_cipsend_data == 1)&&(flag_dma_working == 0)){
-    	if(strcmp(rx_data,"\r\nOK\r\n> ")==0){
-    		strcpy(tx_buffer, "Hola Mundo");
-    		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-    		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-    		flag_dma_working = 1;
-
-    		flag_cipsend_data = 0;
-    	}
-
-    	printf("%s\n",tx_buffer);
-    	HAL_Delay(5000);
-    }*/
   }
   /* USER CODE END 3 */
 }
