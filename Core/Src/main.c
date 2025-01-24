@@ -127,7 +127,7 @@ void check_dma_transfer_complete(void) {
     if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
         // Activar una bandera o procesar los datos
     	flag_dma_finish = 1;
-
+    	printf("flag_dma_finish = %d\n",flag_dma_finish);
         // Limpia el flag de transferencia completa
         __HAL_DMA_CLEAR_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5);
     }
@@ -286,7 +286,7 @@ Event_t handle_event(State_t state)
 }
 
 //__attribute__((optimize("O0")))
-int find_first_non_null(const volatile char *str, int size)
+int find_first_non_null(const char *str, int size)
 {
 	int i = 0;
 	while (i < size) {
