@@ -300,13 +300,13 @@ int find_first_non_null(const volatile char *str, int size)
     return -1;
 }
 
-int find_null_position(const char *str)
+int find_null_position(const char *str, int size)
 {
     if (str == NULL) {
         return -1; // Manejo de error si la cadena es NULL
     }
 
-    for (int i = 0; ; i++) {
+    for (int i = 0; i < size ; i++) {
         if ((str[i] == '\0')&&(i !=0)) {
             return i; // Retorna la posición del carácter nulo
         }
@@ -344,7 +344,7 @@ void AT_communication_handler(void)
 	}
 
 	if(flag_send_AT_command == 1){
-		tx_buffer_size = find_null_position(tx_buffer);
+		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
 	   	printf("%s",tx_buffer);
 	   	if(tx_buffer_size != -1){
 	   		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
@@ -454,7 +454,7 @@ int main(void)
 
     if(flag_dma_finish == 1){
     	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
-    	tx_buffer_size = find_null_position(tx_buffer);
+    	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
 
     	if(rx_buffer_init != -1){
     		rx_buffer_pos = rx_buffer_init + tx_buffer_size + 1;
@@ -482,7 +482,7 @@ int main(void)
     	time_cipsend = HAL_GetTick();
     	flag_cipsend = 1;
 
-    	data_length = find_null_position(data_to_send);
+    	data_length = find_null_position(data_to_send, BUFFER_SIZE);
 
     	memset(tx_buffer,0,BUFFER_SIZE);
     	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n",data_length);
@@ -490,7 +490,7 @@ int main(void)
 
     if((flag_cipsend == 1)&&(flag_cipsend_data == 0)&&(flag_dma_working == 0)){
 
-    	tx_buffer_size = find_null_position(tx_buffer);
+    	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
     	HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
     	flag_dma_working = 1;
 
@@ -501,7 +501,7 @@ int main(void)
     if((flag_cipsend_data == 1)&&(flag_dma_working == 0)){
     	if(strcmp(rx_data,"\r\nOK\r\n> ")==0){
     		strcpy(tx_buffer, "Hola Mundo");
-    		tx_buffer_size = find_null_position(tx_buffer);
+    		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
     		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
     		flag_dma_working = 1;
 
