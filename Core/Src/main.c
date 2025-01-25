@@ -38,13 +38,34 @@ typedef enum {
     STATE_CWMODE_OK,
     STATE_CWJAP_OK,
     STATE_CIPMUX_OK,
-	STATE_CIPSTART_OK
+	STATE_CONNECTED,
+	STATE_DISCONNECTED,
 } State_t;
+
+typedef enum{
+	SEND_DATA,
+	CHECK_DATA,
+	CONNECT_TO_SERVER,
+	IDLE,
+}task_t;
 
 State_t currentState_global = STATE_WAITING_COM;
 State_t aux_state;
 
-typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, SEND_FROM_PC, CIPSEND_READY, CIPSEND_PC, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
+typedef enum {
+	OK,
+	CONNECT,
+	CLOSED,
+	BUSY,
+	ERR,
+	AT,
+	EMPTY,
+	SEND_FROM_PC,
+	SERVER_CLOSED,
+	CIPSEND_READY,
+	CIPSEND_PC,
+	UNKNOWN
+}response_t; // Don't use ERROR the stm already uses it
 
 typedef struct {
         const char *keyword;
@@ -61,16 +82,52 @@ KeywordResponse keywords[] = {
 		{"SEND_FROM_PC", SEND_FROM_PC},
 		{"CIPSEND_PC", CIPSEND_PC},
 		{">", CIPSEND_READY},
+		{"CLOSED", SERVER_CLOSED},
 };
+
+char comando_AT[]="AT\r\n";
+
+char comando_AT_CWMODE[]="AT+CWMODE=3\r\n";//Poner el ESP8266 en modo AP y conexión WIFI
+
+char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar el ESP8266 a la red WIFI
+
+char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
+
+char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
-typedef enum {SEND_TX, SENT_TX, RX_RECEIVED, PROCESSED_RX, CIPSEND, WAITING}action_t;
+typedef enum {
+	SEND_TX,
+	PROCESSED_RX,
+	CIPSEND,
+	RECONNECT,
+	WAITING,
+}action_t;
 
 action_t global_action = WAITING;
 
 response_t type_of_response = EMPTY;
 response_t *response_array;
+
+typedef struct {
+        const State_t state;
+        const response_t response;
+        const char command[50];
+        const State_t next_state;
+} stateResponse;
+
+stateResponse correct_response[] = {
+        {STATE_WAITING_COM, OK,"AT\r\n",STATE_COM_OK},
+        {STATE_COM_OK, OK,"AT+CWMODE=3\r\n",STATE_CWMODE_OK},
+        {STATE_CWMODE_OK, OK,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",STATE_CWJAP_OK},
+        {STATE_CWJAP_OK, OK,"AT+CIPMUX=0\r\n",STATE_CIPMUX_OK},
+		{STATE_CIPMUX_OK, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
+		{STATE_CONNECTED, CLOSED,"",STATE_DISCONNECTED},
+		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
+};
+
+stateResponse* global_responseState=&correct_response[0];
 
 int number_of_lines_in_response = 0;
 /*********************************** Maquina de estados typedefs ****************************************/
@@ -120,6 +177,8 @@ uint32_t cipstart_delay = 3000, cipsend_delay=0;
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
 
+
+
 void DMA1_Stream5_IRQHandler(void)
 {
     // Llama al manejador del HAL para procesar eventos estándar
@@ -138,16 +197,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 }
 
-action_t check_dma_transfer_complete(void) {
-	printf("dma_check\n");
+Bool check_dma_transfer_complete(void) {
     if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
         // Activar una bandera o procesar los datos
 
         // Limpia el flag de transferencia completa
         __HAL_DMA_CLEAR_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5);
-        return RX_RECEIVED;
+        return 1;
     }
-    return WAITING;
+    return 0;
 }
 /* USER CODE END PV */
 
@@ -172,19 +230,33 @@ void MX_USB_HOST_Process(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-char comando_AT[]="AT\r\n";
 
-char comando_AT_CWMODE[]="AT+CWMODE=3\r\n";//Poner el ESP8266 en modo AP y conexión WIFI
-
-char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar el ESP8266 a la red WIFI
-
-char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
-
-char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
 
 //char comando_AT_CIPSEND[]="AT+CIPSEND=";
+Bool set_tx_buffer(int length_response_array, stateResponse state_response){
+	if(strcmp(tx_buffer, state_response.command)!=0){
+		memset(tx_buffer, 0, BUFFER_SIZE);
+		strcpy(tx_buffer, state_response.command);
+	}
+	for(int i=0;i < length_response_array;i++){
+		if (response_array[i] == state_response.response) {
+			memset(tx_buffer, 0, BUFFER_SIZE);
+			return 1;
+		}
+	}
+	return 0;
+}
 
-void handlestate(State_t currentState)
+stateResponse *next(stateResponse state_response){
+	for(int i=0; i < (sizeof(correct_response)/sizeof(stateResponse));i++){
+		if(state_response.next_state==correct_response[i].state){
+			return &correct_response[i];
+		}
+	}
+	return global_responseState;
+}
+
+void handlestate(stateResponse current_response_state)
 {
   int length_response_array;
 
@@ -195,71 +267,43 @@ void handlestate(State_t currentState)
 	  length_response_array = 0;
   }
 
-  switch (currentState)
+  switch (current_response_state.state)
   {
   	  case STATE_WAITING_COM:
-  		  memset(tx_buffer, 0, BUFFER_SIZE);
-  		  strcpy(tx_buffer, comando_AT);//strcpy(destination, source);
-
-  		  for(int i=0;i < length_response_array;i++){
-  			if (response_array[i] == OK) {
-  				currentState_global = STATE_COM_OK;
-  			}
-  		  }
-
-  		  break;
-
+  		 if(set_tx_buffer(length_response_array,current_response_state)){
+  			 global_responseState = next(current_response_state);
+  		 }
+  		 break;
   	  case STATE_COM_OK:
-       	  memset(tx_buffer, 0, BUFFER_SIZE);
-       	  strcpy(tx_buffer, comando_AT_CWMODE);
-
-       	  for(int i=0;i < length_response_array;i++){
-       		  if (response_array[i] == OK) {
-       			  currentState_global = STATE_CWMODE_OK;
-       	  	  }
-       	  }
-
-          break;
-
+  		  if(set_tx_buffer(length_response_array,current_response_state)){
+  			  global_responseState = next(current_response_state);
+  		  }
+  		  break;
       case STATE_CWMODE_OK:
-          memset(tx_buffer, 0, BUFFER_SIZE);
-      	  strcpy(tx_buffer, comando_AT_CWJAP);
-
-      	  for(int i=0;i < length_response_array;i++){
-      	      if (response_array[i] == OK) {
-      	    	  currentState_global = STATE_CWJAP_OK;
-      	      }
-      	  }
-
-      	  break;
-
+    	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  global_responseState = next(current_response_state);
+    	  }
+    	  break;
       case STATE_CWJAP_OK:
-      	  memset(tx_buffer, 0, BUFFER_SIZE);
-       	  strcpy(tx_buffer, comando_AT_CIPMUX);
-
-       	  for(int i=0;i < length_response_array;i++){
-       	      if (response_array[i] == OK) {
-       	    	  currentState_global = STATE_CIPMUX_OK;
-       	      }
-       	  }
-
+    	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  global_responseState = next(current_response_state);
+    	  }
           break;
-
       case STATE_CIPMUX_OK:
-       	  memset(tx_buffer, 0, BUFFER_SIZE);
-       	  strcpy(tx_buffer, comando_AT_CIPSTART);
-
-       	  for(int i=0;i < length_response_array;i++){
-       	      if (response_array[i] == CONNECT) {
-       	    	  currentState_global = STATE_CIPSTART_OK;
-       	      }
-       	  }
-
+    	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  global_responseState = next(current_response_state);
+    	  }
           break;
-
-      default:
-
-          break;
+      case STATE_CONNECTED:
+    	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  global_responseState = next(current_response_state);
+    	  }
+    	  break;
+      case STATE_DISCONNECTED:
+    	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  global_responseState = next(current_response_state);
+    	  }
+    	  break;
   }
   global_action = SEND_TX;
   free(response_array);
@@ -309,7 +353,7 @@ int find_first_non_null(const char *str, int size)
 {
 	int i = 0;
 	while (i < size) {
-		printf("i = %d\n",i);
+		//printf("i = %d\n",i);
 		if (str[i] != '\0') {
 			return i; // Retorna la posición del primer carácter no nulo
 	    }
@@ -357,7 +401,7 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
 void read_lines(const char** lines){
 	if (lines != NULL) {
 		for (int i = 0; i < number_of_lines_in_response; i++) {
-			printf("Linea %d: %s\n", i + 1, lines[i]);
+			//printf("Linea %d: %s\n", i + 1, lines[i]);
 			Bool matched = 0;
 			Bool from_pc = 0;
 			response_t pc;
@@ -374,7 +418,7 @@ void read_lines(const char** lines){
 			    		memset(tx_buffer, 0, BUFFER_SIZE);
 			    		strcpy(tx_buffer,data_to_send);
 			    		memset(data_to_send, 0, BUFFER_SIZE);
-			    		global_action = SEND_TX;
+			    		//global_action = SEND_TX;
 			    	}
 
 			        matched = 1;  // Marca que hubo coincidencia
@@ -397,7 +441,7 @@ void read_lines(const char** lines){
 
 					sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_length);
 
-					global_action = CIPSEND;
+					//global_action = CIPSEND;
 				}
 
 				if(pc == SEND_FROM_PC){
@@ -405,7 +449,7 @@ void read_lines(const char** lines){
 						strcat(tx_buffer, lines[j]);
 					}
 
-					global_action = SEND_TX;
+					//global_action = SEND_TX;
 				}
 
 				// Sal del bucle principal
@@ -491,51 +535,42 @@ void AT_communication_handler(const action_t action)
 	switch(action){
 		case SEND_TX:
 			send_tx();
-
-			if(currentState_global==STATE_CIPMUX_OK){
+			/*if(currentState_global==STATE_CIPMUX_OK){
 				HAL_Delay(3000);
-			}
-
-			global_action = SENT_TX;
-
+			}*/
+			global_action = WAITING;
 			break;
-
-		case SENT_TX:
-			global_action = check_dma_transfer_complete();
-			break;
-
 		case WAITING:
-			global_action = check_dma_transfer_complete();
-			break;
-
-		case RX_RECEIVED:
-			get_responses();
-
-			if((global_action != CIPSEND)&&(global_action != SEND_TX)){
+			if(check_dma_transfer_complete()){
 				global_action = PROCESSED_RX;
 			}
-
 			break;
-
 		case PROCESSED_RX:
-			if(currentState_global!=STATE_CIPSTART_OK){
-				handlestate(currentState_global);
-				//printf("\n\nEstados\n\n");
-			}
-
-			break;
-		case CIPSEND:
-			send_tx();
-
 			get_responses();
-			if(global_action!=SEND_TX){
-				global_action = WAITING;
+			if(currentState_global!=STATE_CONNECTED){
+				handlestate(*global_responseState);
 			}
+			break;
+		default:
+			global_action = WAITING;
+			break;
+	}
+}
+
+void task_handler(Bool flag_connected, task_t task){
+
+	switch(task){
+		case IDLE:
 
 			break;
+		case CONNECT_TO_SERVER:
+
+			break;
+
 		default:
 			break;
 	}
+
 }
 /* USER CODE END 0 */
 
@@ -582,7 +617,8 @@ int main(void)
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
-
+  Bool flag_connected = 0;
+  task_t task = IDLE;
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
