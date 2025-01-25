@@ -44,21 +44,23 @@ typedef enum {
 State_t currentState_global = STATE_WAITING_COM;
 State_t aux_state;
 
-typedef enum {
-	EVENT_WAITING_RESPONSE,
-    EVENT_OK_RESPONSE,
-    EVENT_CWMODE_OK,
-    EVENT_CWJAP_OK,
-    EVENT_CIPMUX_OK,
-    EVENT_CIPSTART_OK
-} Event_t;
+typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
-Event_t event_global=EVENT_WAITING_RESPONSE;
-Event_t aux_event;
+typedef struct {
+        const char *keyword;
+        response_t response;
+} KeywordResponse;
+
+KeywordResponse keywords[] = {
+        {"CONNECT", CONNECT},
+        {"CLOSED", CLOSED},
+        {"OK", OK},
+        {"ERROR", ERR},
+        {"busy", BUSY},
+        {"AT", AT},
+};
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
-
-typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
 typedef enum {SEND_TX, SENT_TX, RX_RECEIVED, PROCESSED_RX, WAITING}action_t;
 
@@ -114,9 +116,6 @@ uint32_t cipstart_delay = 3000;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
-Bool flag_uart_interrupt = 0;
-Bool flag_cipsend = 0;
-Bool flag_cipsend_data = 0;
 
 void DMA1_Stream5_IRQHandler(void)
 {
@@ -260,50 +259,6 @@ void handlestate(State_t currentState)
   free(response_array);
 }
 
-Event_t handle_event(State_t state)
-{
-	  //aux_event=event_global;
-	  switch (state) {
-			  case STATE_WAITING_COM:
-				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
-					  return EVENT_OK_RESPONSE;
-				  }
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-			  case STATE_COM_OK:
-				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
-					  return EVENT_CWMODE_OK;
-				  }
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-			  case STATE_CWMODE_OK:
-				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
-					  return EVENT_CWJAP_OK;
-				  }
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-			  case STATE_CWJAP_OK:
-				  if (strcmp(rx_data,"\r\nOK\r\n")==0) {
-					  return EVENT_CIPMUX_OK;
-				  }
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-			  case STATE_CIPMUX_OK:
-				  if (strcmp(rx_data,"CONNECT\r\n\r\nOK\r\n")==0) {
-					  return EVENT_CIPSTART_OK;
-				  }
-				  if (strcmp(rx_data,"ALREADY CONNECTED\r\n\r\nERROR\r\n")==0) {
-					  return EVENT_CIPSTART_OK;
-				  }
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-			  default:
-				  return EVENT_WAITING_RESPONSE;
-				  break;
-		  }
-	  return EVENT_WAITING_RESPONSE;// Si no hay evento, pués esperando respuesta
-}
-
 char **split_lines(const char *buffer, int *line_count)
 {
     char **lines = NULL;
@@ -393,6 +348,58 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
     dest[j] = '\0';
 }
 
+void read_lines(const char** lines){
+	if (lines != NULL) {
+		for (int i = 0; i < number_of_lines_in_response; i++) {
+			printf("Linea %d: %s\n", i + 1, lines[i]);
+			Bool matched = 0;
+
+			for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
+			    if (strstr(lines[i], keywords[k].keyword) != NULL) {
+			    	response_array[i] = keywords[k].response;
+			        matched = 1;  // Marca que hubo coincidencia
+			        break;        // Rompe el bucle, no necesitamos buscar más
+			    }
+			}
+
+			    // Verifica si la línea está vacía
+			if (!matched && strlen(lines[i]) == 0) {
+			    response_array[i] = EMPTY;
+			    matched = 1;
+			}
+
+			    // Si no se encontró ninguna coincidencia
+			if (!matched) {
+			    response_array[i] = UNKNOWN;
+			}
+	    }
+	}
+}
+
+void send_tx(){
+	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+	printf("%s",tx_buffer);
+	if(tx_buffer_size != -1){
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+	}
+}
+
+void get_responses(){
+	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
+
+	if(rx_buffer_init != -1){
+
+	    memset(rx_data,0,BUFFER_SIZE);
+	    copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
+
+	    memset(rx_buffer,0,BUFFER_SIZE);
+	    printf("%s.\n",rx_data);
+	    generate_responses();
+	}
+}
+
+
 void generate_responses() // time duration, between 1 and 2 milisecond
 {
 	//printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
@@ -415,61 +422,13 @@ void generate_responses() // time duration, between 1 and 2 milisecond
 
 	    // Imprimir las líneas separadas
 	if (lines != NULL) {
-	    for (int i = 0; i < number_of_lines_in_response; i++) {
-	    	printf("Linea %d: %s\n", i + 1, lines[i]);
-	    	Bool no_null=0;
-	    	if (strstr(lines[i], "CONNECT") != NULL) {
-	    		printf("Linea %d contiene: CONNECT\n",i+1);
-	    		response_array[i] = CONNECT;
-	    		no_null=1;
-	    	}
 
-	    	if (strstr(lines[i], "CLOSED") != NULL) {
-	    		printf("Linea %d contiene: CLOSED\n",i+1);
-	    		response_array[i] = CLOSED;
-	    		no_null=1;
-	    	}
+		read_lines(lines);
 
-	    	if (strstr(lines[i], "OK") != NULL) {
-	    		printf("Linea %d contiene: OK\n",i+1);
-	    		response_array[i] = OK;
-	    		no_null=1;
-	    	}
+		for (int i = 0; i < number_of_lines_in_response; i++) {
+			free(lines[i]);
+		}
 
-	    	if (lines[i]== NULL) {
-	    		printf("Linea %d vacia\n",i+1);
-	    		response_array[i] = EMPTY;
-	    		no_null=1;
-	    	}
-
-	    	if (strstr(lines[i], "ERROR") != NULL) {
-	    		printf("Linea %d Error en el comando\n",i+1);
-	    		response_array[i] = ERR;
-	    		no_null=1;
-	    	}
-
-	    	if(strstr(lines[i], "busy") != NULL) {
-	    		printf("Linea %d ESP8266 ocupado\n",i+1);
-	    		response_array[i] = BUSY;
-	    		no_null=1;
-	    	}
-
-	    	if (strstr(lines[i], "AT") != NULL){
-	    		printf("Linea %d Respuesta echo del ESP8266\n",i+1);
-	    		response_array[i] = AT;
-	    		no_null=1;
-	    	}
-	    	if((no_null == 0)&&(strlen(lines[i])!=0)) {
-	    		printf("Linea %d respuesta desconocida\n",i+1);
-	    		response_array[i] = UNKNOWN;
-	    		no_null=1;
-	    	}
-
-	    	if(no_null==1){
-	    		type_of_response = response_array[i];
-	    	}
-	        free(lines[i]); // Liberar cada línea
-	    }
 	    free(lines); // Liberar el array de punteros
 	}
 
@@ -477,6 +436,7 @@ void generate_responses() // time duration, between 1 and 2 milisecond
     number_of_lines_in_response = 0;
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
+
 
 void AT_communication_handler(const action_t action)
 {
@@ -510,30 +470,6 @@ void AT_communication_handler(const action_t action)
 			}
 
 			break;
-	}
-}
-
-
-void send_tx(void){
-	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	printf("%s",tx_buffer);
-	if(tx_buffer_size != -1){
-		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-	}
-}
-
-void get_responses(void){
-	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
-
-	if(rx_buffer_init != -1){
-
-	    memset(rx_data,0,BUFFER_SIZE);
-	    copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
-
-	    memset(rx_buffer,0,BUFFER_SIZE);
-	    printf("%s.\n",rx_data);
-	    generate_responses();
 	}
 }
 /* USER CODE END 0 */
