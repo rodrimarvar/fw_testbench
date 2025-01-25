@@ -40,17 +40,13 @@ typedef enum {
     STATE_CIPMUX_OK,
 	STATE_CONNECTED,
 	STATE_DISCONNECTED,
-} State_t;
+}Conection_State_t;
 
 typedef enum{
-	SEND_DATA,
-	CHECK_DATA,
-	CONNECT_TO_SERVER,
-	IDLE,
-}task_t;
-
-State_t currentState_global = STATE_WAITING_COM;
-State_t aux_state;
+	WAITING_FOR_CONNECTION,
+	CONNECTED_IDLE,
+	GET_RESPONSES,
+}Process_state_t;
 
 typedef enum {
 	OK,
@@ -100,21 +96,19 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 typedef enum {
 	SEND_TX,
 	PROCESSED_RX,
-	CIPSEND,
-	RECONNECT,
 	WAITING,
 }action_t;
 
-action_t global_action = WAITING;
+action_t global_action_connection = WAITING;
 
 response_t type_of_response = EMPTY;
 response_t *response_array;
 
 typedef struct {
-        const State_t state;
+        const Conection_State_t state;
         const response_t response;
         const char command[50];
-        const State_t next_state;
+        const Conection_State_t next_state;
 } stateResponse;
 
 stateResponse correct_response[] = {
@@ -176,6 +170,8 @@ uint32_t cipstart_delay = 3000, cipsend_delay=0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
+Bool flag_dma_rx = 0;
+
 
 
 
@@ -186,7 +182,7 @@ void DMA1_Stream5_IRQHandler(void)
 
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    global_action = WAITING;
+    flag_dma_rx = 1;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -256,7 +252,7 @@ stateResponse *next(stateResponse state_response){
 	return global_responseState;
 }
 
-void handlestate(stateResponse current_response_state)
+Bool handlestate(stateResponse current_response_state)
 {
   int length_response_array;
 
@@ -305,7 +301,13 @@ void handlestate(stateResponse current_response_state)
     	  }
     	  break;
   }
-  global_action = SEND_TX;
+  if(global_responseState!=STATE_CONNECTED){
+	  return 0;
+  }
+  else{
+	  return 1;
+  }
+
   free(response_array);
 }
 
@@ -530,40 +532,42 @@ void generate_responses() // time duration, between 1 and 2 milisecond
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-void AT_communication_handler(const action_t action)
+void get_connection(const action_t action)
 {
 	switch(action){
 		case SEND_TX:
 			send_tx();
-			/*if(currentState_global==STATE_CIPMUX_OK){
-				HAL_Delay(3000);
-			}*/
-			global_action = WAITING;
+			global_action_connection = WAITING;
 			break;
 		case WAITING:
 			if(check_dma_transfer_complete()){
-				global_action = PROCESSED_RX;
+				global_action_connection = PROCESSED_RX;
 			}
 			break;
 		case PROCESSED_RX:
 			get_responses();
 			if(global_responseState->state!=STATE_CONNECTED){
-				handlestate(*global_responseState);
+				if(handlestate(*global_responseState)){
+					global_action_connection = WAITING;
+				}
+				else{
+					global_action_connection = SEND_TX;
+				}
 			}
 			break;
 		default:
-			global_action = WAITING;
+			global_action_connection = WAITING;
 			break;
 	}
 }
 
-void task_handler(Bool flag_connected, task_t task){
+void task_handler(Process_state_t state){
 
-	switch(task){
-		case IDLE:
+	switch(state){
+		case WAITING_FOR_CONNECTION:
 
 			break;
-		case CONNECT_TO_SERVER:
+		case CONNECTED_IDLE:
 
 			break;
 
@@ -618,7 +622,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
   Bool flag_connected = 0;
-  task_t task = IDLE;
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
@@ -645,7 +648,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>500)){
     	time_communication_handling = HAL_GetTick();
-    	AT_communication_handler(global_action);
+    	get_connection(global_action_connection);
     }
   }
   /* USER CODE END 3 */
