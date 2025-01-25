@@ -44,7 +44,7 @@ typedef enum {
 State_t currentState_global = STATE_WAITING_COM;
 State_t aux_state;
 
-typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, SEND_FROM_PC, CIPSEND_READY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
+typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, SEND_FROM_PC, CIPSEND_READY, CIPSEND_PC, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
 typedef struct {
         const char *keyword;
@@ -58,7 +58,8 @@ KeywordResponse keywords[] = {
         {"ERROR", ERR},
         {"busy", BUSY},
         {"AT", AT},
-		{"SEND_PC", SEND_FROM_PC},
+		{"SEND_FROM_PC", SEND_FROM_PC},
+		{"CIPSEND_PC", CIPSEND_PC},
 		{">", CIPSEND_READY},
 };
 
@@ -358,13 +359,15 @@ void read_lines(const char** lines){
 		for (int i = 0; i < number_of_lines_in_response; i++) {
 			printf("Linea %d: %s\n", i + 1, lines[i]);
 			Bool matched = 0;
-			Bool send_from_pc = 0;
+			Bool from_pc = 0;
+			response_t pc;
 
 			for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
 			    if (strstr(lines[i], keywords[k].keyword) != NULL) {
 			    	response_array[i] = keywords[k].response;
-			    	if(keywords[k].response == SEND_FROM_PC){
-			    		send_from_pc = 1;
+			    	if((keywords[k].response == SEND_FROM_PC)||(keywords[k].response == CIPSEND_PC)){
+			    		from_pc = 1;
+			    		pc = keywords[k].response;
 			    	}
 
 			    	if((keywords[k].response == CIPSEND_READY)){
@@ -374,31 +377,37 @@ void read_lines(const char** lines){
 			    		global_action = SEND_TX;
 			    	}
 
-			    	if(global_action==CIPSEND){
-			    		printf("Hemos entrado en cipsend\n");
-			    	}
-
 			        matched = 1;  // Marca que hubo coincidencia
 			        break;        // Rompe el bucle, no necesitamos buscar más
 			    }
 			}
 
-			if(send_from_pc == 1){
+			if(from_pc == 1){
 				// Limpia el tx_buffer (opcional, para evitar datos residuales)
 				memset(tx_buffer, 0, BUFFER_SIZE);
 				memset(data_to_send, 0, BUFFER_SIZE);
 
 				// Concatenar las líneas restantes en tx_buffer
-				for (int j = i + 1; j < number_of_lines_in_response; j++) {
-					strcat(data_to_send, lines[j]);
+
+				if(pc == CIPSEND_PC){
+					for (int j = i + 1; j < number_of_lines_in_response; j++) {
+						strcat(data_to_send, lines[j]);
+					}
+					data_length = strlen(data_to_send);
+
+					sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_length);
+
+					global_action = CIPSEND;
 				}
 
-				data_length = strlen(data_to_send);
+				if(pc == SEND_FROM_PC){
+					for (int j = i + 1; j < number_of_lines_in_response; j++) {
+						strcat(tx_buffer, lines[j]);
+					}
 
-				sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_length);
+					global_action = SEND_TX;
+				}
 
-				cipsend_delay = HAL_GetTick();
-				global_action = CIPSEND;
 				// Sal del bucle principal
 				break;
 			}
@@ -481,10 +490,12 @@ void AT_communication_handler(const action_t action)
 {
 	switch(action){
 		case SEND_TX:
+			send_tx();
+
 			if(currentState_global==STATE_CIPMUX_OK){
 				HAL_Delay(3000);
 			}
-			send_tx();
+
 			global_action = SENT_TX;
 
 			break;
@@ -500,7 +511,7 @@ void AT_communication_handler(const action_t action)
 		case RX_RECEIVED:
 			get_responses();
 
-			if(global_action != CIPSEND){
+			if((global_action != CIPSEND)&&(global_action != SEND_TX)){
 				global_action = PROCESSED_RX;
 			}
 
@@ -514,13 +525,11 @@ void AT_communication_handler(const action_t action)
 
 			break;
 		case CIPSEND:
-			if(HAL_GetTick() - cipsend_delay > 1000){
-				send_tx();
-				printf("Hemos entrado en cipsend\n");
-				get_responses();
-				if(global_action!=SEND_TX){
-					global_action = WAITING;
-				}
+			send_tx();
+
+			get_responses();
+			if(global_action!=SEND_TX){
+				global_action = WAITING;
 			}
 
 			break;
