@@ -44,7 +44,7 @@ typedef enum {
 State_t currentState_global = STATE_WAITING_COM;
 State_t aux_state;
 
-typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
+typedef enum {OK, CONNECT, CLOSED, BUSY, ERR, AT, EMPTY, SEND_FROM_PC, CIPSEND_READY, UNKNOWN}response_t; // Don't use ERROR the stm already uses it
 
 typedef struct {
         const char *keyword;
@@ -58,11 +58,13 @@ KeywordResponse keywords[] = {
         {"ERROR", ERR},
         {"busy", BUSY},
         {"AT", AT},
+		{"SEND_PC", SEND_FROM_PC},
+		{">", CIPSEND_READY},
 };
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
-typedef enum {SEND_TX, SENT_TX, RX_RECEIVED, PROCESSED_RX, WAITING}action_t;
+typedef enum {SEND_TX, SENT_TX, RX_RECEIVED, PROCESSED_RX, CIPSEND, WAITING}action_t;
 
 action_t global_action = WAITING;
 
@@ -112,7 +114,7 @@ char data_to_send[BUFFER_SIZE];
 
 int data_length = 0;
 
-uint32_t cipstart_delay = 3000;
+uint32_t cipstart_delay = 3000, cipsend_delay=0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
@@ -123,6 +125,7 @@ void DMA1_Stream5_IRQHandler(void)
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
 
     // Tu código personalizado
+    HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
     global_action = WAITING;
 }
 
@@ -177,6 +180,8 @@ char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar 
 char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
 
 char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+
+//char comando_AT_CIPSEND[]="AT+CIPSEND=";
 
 void handlestate(State_t currentState)
 {
@@ -353,13 +358,49 @@ void read_lines(const char** lines){
 		for (int i = 0; i < number_of_lines_in_response; i++) {
 			printf("Linea %d: %s\n", i + 1, lines[i]);
 			Bool matched = 0;
+			Bool send_from_pc = 0;
 
 			for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
 			    if (strstr(lines[i], keywords[k].keyword) != NULL) {
 			    	response_array[i] = keywords[k].response;
+			    	if(keywords[k].response == SEND_FROM_PC){
+			    		send_from_pc = 1;
+			    	}
+
+			    	if((keywords[k].response == CIPSEND_READY)){
+			    		memset(tx_buffer, 0, BUFFER_SIZE);
+			    		strcpy(tx_buffer,data_to_send);
+			    		memset(data_to_send, 0, BUFFER_SIZE);
+			    		global_action = SEND_TX;
+			    	}
+
+			    	if(global_action==CIPSEND){
+			    		printf("Hemos entrado en cipsend\n");
+			    	}
+
 			        matched = 1;  // Marca que hubo coincidencia
 			        break;        // Rompe el bucle, no necesitamos buscar más
 			    }
+			}
+
+			if(send_from_pc == 1){
+				// Limpia el tx_buffer (opcional, para evitar datos residuales)
+				memset(tx_buffer, 0, BUFFER_SIZE);
+				memset(data_to_send, 0, BUFFER_SIZE);
+
+				// Concatenar las líneas restantes en tx_buffer
+				for (int j = i + 1; j < number_of_lines_in_response; j++) {
+					strcat(data_to_send, lines[j]);
+				}
+
+				data_length = strlen(data_to_send);
+
+				sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_length);
+
+				cipsend_delay = HAL_GetTick();
+				global_action = CIPSEND;
+				// Sal del bucle principal
+				break;
 			}
 
 			    // Verifica si la línea está vacía
@@ -381,7 +422,7 @@ void send_tx(){
 	printf("%s",tx_buffer);
 	if(tx_buffer_size != -1){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
 
@@ -398,7 +439,6 @@ void get_responses(){
 	    generate_responses();
 	}
 }
-
 
 void generate_responses() // time duration, between 1 and 2 milisecond
 {
@@ -437,7 +477,6 @@ void generate_responses() // time duration, between 1 and 2 milisecond
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-
 void AT_communication_handler(const action_t action)
 {
 	switch(action){
@@ -460,15 +499,32 @@ void AT_communication_handler(const action_t action)
 
 		case RX_RECEIVED:
 			get_responses();
-			global_action = PROCESSED_RX;
+
+			if(global_action != CIPSEND){
+				global_action = PROCESSED_RX;
+			}
+
 			break;
 
 		case PROCESSED_RX:
 			if(currentState_global!=STATE_CIPSTART_OK){
 				handlestate(currentState_global);
-				printf("\n\nEstados\n\n");
+				//printf("\n\nEstados\n\n");
 			}
 
+			break;
+		case CIPSEND:
+			if(HAL_GetTick() - cipsend_delay > 1000){
+				send_tx();
+				printf("Hemos entrado en cipsend\n");
+				get_responses();
+				if(global_action!=SEND_TX){
+					global_action = WAITING;
+				}
+			}
+
+			break;
+		default:
 			break;
 	}
 }
@@ -529,7 +585,7 @@ int main(void)
 
 
   strcpy(tx_buffer, comando_AT);
-  strcpy(data_to_send, "Hola Mundo!");
+  //strcpy(data_to_send, "Hola Mundo!");
 
   send_tx();
   /* USER CODE END 2 */
