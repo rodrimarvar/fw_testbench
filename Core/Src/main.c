@@ -45,7 +45,7 @@ typedef enum {
 typedef enum{
 	WAITING_FOR_CONNECTION,
 	CONNECTED_IDLE,
-	GET_RESPONSES,
+	GETTING_RESPONSES,
 }Process_state_t;
 
 typedef enum {
@@ -123,7 +123,7 @@ stateResponse correct_response[] = {
 
 stateResponse* global_responseState=&correct_response[0];
 
-int number_of_lines_in_response = 0;
+
 /*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
 
@@ -166,9 +166,9 @@ char data_to_send[BUFFER_SIZE];
 
 int data_length = 0;
 
-uint32_t cipstart_delay = 3000, cipsend_delay=0;
-
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
+
+int number_of_lines_in_response = 0;
 
 Bool flag_dma_rx = 0;
 
@@ -482,7 +482,7 @@ void send_tx(){
 }
 
 void get_responses(){
-	rx_buffer_init =find_first_non_null(rx_buffer,BUFFER_SIZE);
+	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
 
 	if(rx_buffer_init != -1){
 
@@ -498,10 +498,9 @@ void get_responses(){
 void generate_responses() // time duration, between 1 and 2 milisecond
 {
 	//printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
-	int rx_data_length = strlen(rx_data)+1;
+	int rx_data_length = strlen(rx_data);
 
 	if(rx_data_length==0){
-		type_of_response = EMPTY;
 		return;
 	}
 
@@ -532,7 +531,7 @@ void generate_responses() // time duration, between 1 and 2 milisecond
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-void get_connection(const action_t action)
+Bool get_connection(const action_t action)
 {
 	switch(action){
 		case SEND_TX:
@@ -559,23 +558,37 @@ void get_connection(const action_t action)
 			global_action_connection = WAITING;
 			break;
 	}
+	if(global_responseState->state!=STATE_CONNECTED){
+		return 0;
+	}
+	else{
+		return 1;
+	}
 }
 
-void task_handler(Process_state_t state){
-
-	switch(state){
+void task_handler(Process_state_t *state){
+	switch(*state){
 		case WAITING_FOR_CONNECTION:
-
+			if(get_connection(global_action_connection)){
+				*state = CONNECTED_IDLE;
+			}
 			break;
 		case CONNECTED_IDLE:
-
+			if(flag_dma_rx == 1){
+				//get_responses();
+				if(!get_connection(global_action_connection)){
+					*state = WAITING_FOR_CONNECTION;
+				}
+			}
 			break;
+		case GETTING_RESPONSES:
 
-		default:
 			break;
 	}
 
 }
+
+Process_state_t state = WAITING_FOR_CONNECTION;
 /* USER CODE END 0 */
 
 /**
@@ -624,6 +637,7 @@ int main(void)
   Bool flag_connected = 0;
 
 
+
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
@@ -648,7 +662,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>500)){
     	time_communication_handling = HAL_GetTick();
-    	get_connection(global_action_connection);
+    	task_handler(&state);
     }
   }
   /* USER CODE END 3 */
