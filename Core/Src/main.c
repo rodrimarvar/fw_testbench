@@ -547,7 +547,7 @@ void AT_communication_handler(const action_t action)
 			break;
 		case PROCESSED_RX:
 			get_responses();
-			if(currentState_global!=STATE_CONNECTED){
+			if(global_responseState->state!=STATE_CONNECTED){
 				handlestate(*global_responseState);
 			}
 			break;
