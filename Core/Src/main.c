@@ -180,13 +180,13 @@ void DMA1_Stream5_IRQHandler(void)
 
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    flag_dma_rx = 1;
+    //flag_dma_rx = 1;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
-		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
@@ -412,10 +412,11 @@ response_t match_respones(char* line){
 	return UNKNOWN;
 }
 
-void get_responses() // time duration, between 1 and 2 milisecond
+response_t get_responses() // time duration, between 1 and 2 milisecond
 {
 	int number_of_lines_in_response = 0;
 
+	free(response_array);
 	flag_firs_non_null = 0;
 	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
 
@@ -439,8 +440,9 @@ void get_responses() // time duration, between 1 and 2 milisecond
 	free(lines);
 	//hacemos lineas de la cadena
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
+	memset(rx_buffer, 0, BUFFER_SIZE);
 	//creamos un vector de tantas respuestas como lineas haya
-	free(response_array);
+
 
 	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
@@ -570,6 +572,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
   Bool flag_connected = 0;
+  response_t* responses_array;
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
