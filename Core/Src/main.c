@@ -109,9 +109,9 @@ typedef struct {
         const response_t response;
         const char command[50];
         const Conection_State_t next_state;
-} stateResponse;
+} com_state_wifi_card;
 
-stateResponse correct_response[] = {
+com_state_wifi_card com_wifi_card_values[] = {
         {STATE_WAITING_COM, OK,"AT\r\n",STATE_COM_OK},
         {STATE_COM_OK, OK,"AT+CWMODE=3\r\n",STATE_CWMODE_OK},
         {STATE_CWMODE_OK, OK,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",STATE_CWJAP_OK},
@@ -121,7 +121,7 @@ stateResponse correct_response[] = {
 		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
 };
 
-stateResponse* global_responseState=&correct_response[0];
+com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
 
 
 /*********************************** Maquina de estados typedefs ****************************************/
@@ -227,7 +227,7 @@ void MX_USB_HOST_Process(void);
 
 
 //char comando_AT_CIPSEND[]="AT+CIPSEND=";
-Bool set_tx_buffer(int length_response_array, stateResponse state_response){
+Bool set_tx_buffer(int length_response_array, com_state_wifi_card state_response){
 	if(strcmp(tx_buffer, state_response.command)!=0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
 		strcpy(tx_buffer, state_response.command);
@@ -241,16 +241,16 @@ Bool set_tx_buffer(int length_response_array, stateResponse state_response){
 	return 0;
 }
 
-stateResponse *next(stateResponse state_response){
-	for(int i=0; i < (sizeof(correct_response)/sizeof(stateResponse));i++){
-		if(state_response.next_state==correct_response[i].state){
-			return &correct_response[i];
+com_state_wifi_card *next(com_state_wifi_card state_response){
+	for(int i=0; i < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));i++){
+		if(state_response.next_state==com_wifi_card_values[i].state){
+			return &com_wifi_card_values[i];
 		}
 	}
-	return global_responseState;
+	return current_wifi_com_status;
 }
 
-Bool handlestate(stateResponse current_response_state)
+Bool handle_wifi_card_state(com_state_wifi_card current_response_state)
 {
   int length_response_array;
 
@@ -265,43 +265,43 @@ Bool handlestate(stateResponse current_response_state)
   {
   	  case STATE_WAITING_COM:
   		 if(set_tx_buffer(length_response_array,current_response_state)){
-  			 global_responseState = next(current_response_state);
+  			 current_wifi_com_status = next(current_response_state);
   		 }
   		 break;
   	  case STATE_COM_OK:
   		  if(set_tx_buffer(length_response_array,current_response_state)){
-  			  global_responseState = next(current_response_state);
+  			  current_wifi_com_status = next(current_response_state);
   		  }
   		  break;
       case STATE_CWMODE_OK:
     	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
+    		  current_wifi_com_status = next(current_response_state);
     	  }
     	  break;
       case STATE_CWJAP_OK:
     	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
+    		  current_wifi_com_status = next(current_response_state);
     	  }
           break;
       case STATE_CIPMUX_OK:
     	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
+    		  current_wifi_com_status = next(current_response_state);
     	  }
           break;
       case STATE_CONNECTED:
     	  printf("Estamos en el estado connected\n");
     	  if(set_tx_buffer(length_response_array,current_response_state)){
     		  printf("Estamos en el estado connected\n");
-    		  global_responseState = next(current_response_state);
+    		  current_wifi_com_status = next(current_response_state);
     	  }
     	  break;
       case STATE_DISCONNECTED:
     	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
+    		  current_wifi_com_status = next(current_response_state);
     	  }
     	  break;
   }
-  if(global_responseState->state!=STATE_CONNECTED){
+  if(current_wifi_com_status->state!=STATE_CONNECTED){
 	  return 0;
   }
   else{
@@ -412,47 +412,40 @@ response_t match_respones(char* line){
 	return UNKNOWN;
 }
 
-response_t get_responses() // time duration, between 1 and 2 milisecond
+size_t get_responses(response_t **responses) // time duration, between 1 and 2 milisecond
 {
 	int number_of_lines_in_response = 0;
 
-	free(response_array);
+	// free(response_array);
 	flag_firs_non_null = 0;
 	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
 
-	if(rx_buffer_init == -1){
-		printf("rx_buffer_init = -1\n");
-		return;
-	}
+  if (rx_buffer_init == -1) {
+    printf("rx_buffer_init = -1\n");
+    *responses = NULL; // Asegura que no apuntamos a datos inválidos
+    return 0;
+  }
 
-	//Obtenemos el numero de lineas en la cenada a tratar
-	for(int i=rx_buffer_init;rx_buffer[i]!='\0';i++){
-		if(rx_data[i] == '\n'){
-			number_of_lines_in_response++;
-		}
-	}
-
-	// liberamos la memoria creada de anteriores ejecucuiones
-	for (int i = 0; i < number_of_lines_in_response; i++) {
-		free(lines[i]);
-	}
-
-	free(lines);
 	//hacemos lineas de la cadena
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
 	memset(rx_buffer, 0, BUFFER_SIZE);
-	//creamos un vector de tantas respuestas como lineas haya
 
+	*responses = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
-	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
+  if (*responses == NULL) {
+    return 0;
+  }
 
-	if (lines != NULL) {
-		for (int i = 0; i < number_of_lines_in_response; i++) {
-			printf("%s",lines[i]);
-			response_array[i] = match_respones(lines[i]);
-		}
-	}
-    //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
+  if (lines != NULL) {
+    for (int i = 0; i < number_of_lines_in_response; i++) {
+      printf("%s",lines[i]);
+      (*responses)[i] = match_respones(lines[i]);
+      free(lines[i]);
+    }
+  }
+  free(lines);
+  return number_of_lines_in_response;
+  // printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
 void send_tx(){
@@ -478,8 +471,8 @@ Bool get_connection(const action_t action)
 			break;
 		case PROCESSED_RX:
 			get_responses();
-			if(global_responseState->state!=STATE_CONNECTED){
-				if(handlestate(*global_responseState)){
+			if(current_wifi_com_status->state!=STATE_CONNECTED){
+				if(handle_wifi_card_state(*current_wifi_com_status)){
 					global_action_connection = WAITING;
 				}
 				else{
@@ -491,7 +484,7 @@ Bool get_connection(const action_t action)
 			global_action_connection = WAITING;
 			break;
 	}
-	if(global_responseState->state!=STATE_CONNECTED){
+	if(current_wifi_com_status->state!=STATE_CONNECTED){
 		return 0;
 	}
 	else{
@@ -500,6 +493,12 @@ Bool get_connection(const action_t action)
 }
 
 void task_handler(Process_state_t *state){
+
+  static response_t* responses = NULL;
+  static size_t response_count = 0;
+
+  response_count = get_responses(&responses);
+
 	switch(*state){
 		case WAITING_FOR_CONNECTION:
 			get_connection(global_action_connection);
@@ -514,7 +513,7 @@ void task_handler(Process_state_t *state){
 				*state = WAITING_FOR_CONNECTION;
 			}
 			if(flag_dma_rx == 1){
-				//get_responses();
+				//response_count = get_responses(&responses);
 
 			}
 			break;
@@ -572,7 +571,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
   Bool flag_connected = 0;
-  response_t* responses_array;
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
