@@ -301,14 +301,12 @@ Bool handlestate(stateResponse current_response_state)
     	  }
     	  break;
   }
-  if(global_responseState!=STATE_CONNECTED){
+  if(global_responseState->state!=STATE_CONNECTED){
 	  return 0;
   }
   else{
 	  return 1;
   }
-
-  free(response_array);
 }
 
 char **split_lines(const char *buffer, int *line_count)
@@ -512,6 +510,8 @@ void generate_responses() // time duration, between 1 and 2 milisecond
 
 	char **lines = split_lines(rx_data, &number_of_lines_in_response);
 
+	free(response_array);
+
 	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
 	    // Imprimir las líneas separadas
@@ -660,7 +660,7 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((HAL_GetTick()-time_communication_handling>500)){
+    if((HAL_GetTick()-time_communication_handling>3000)){
     	time_communication_handling = HAL_GetTick();
     	task_handler(&state);
     }
