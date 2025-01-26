@@ -117,7 +117,7 @@ stateResponse correct_response[] = {
         {STATE_CWMODE_OK, OK,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",STATE_CWJAP_OK},
         {STATE_CWJAP_OK, OK,"AT+CIPMUX=0\r\n",STATE_CIPMUX_OK},
 		{STATE_CIPMUX_OK, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
-		{STATE_CONNECTED, CLOSED,"",STATE_DISCONNECTED},
+		{STATE_CONNECTED, CLOSED,"AT\r\n",STATE_DISCONNECTED},
 		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
 };
 
@@ -168,21 +168,18 @@ int data_length = 0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
-int number_of_lines_in_response = 0;
-
 Bool flag_dma_rx = 0;
 
-
+char **lines;
 
 
 void DMA1_Stream5_IRQHandler(void)
 {
     // Llama al manejador del HAL para procesar eventos estándar
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
-
+    flag_dma_rx = 1;
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    flag_dma_rx = 1;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -291,7 +288,9 @@ Bool handlestate(stateResponse current_response_state)
     	  }
           break;
       case STATE_CONNECTED:
+    	  printf("Estamos en el estado connected\n");
     	  if(set_tx_buffer(length_response_array,current_response_state)){
+    		  printf("Estamos en el estado connected\n");
     		  global_responseState = next(current_response_state);
     	  }
     	  break;
@@ -301,14 +300,12 @@ Bool handlestate(stateResponse current_response_state)
     	  }
     	  break;
   }
-  if(global_responseState!=STATE_CONNECTED){
+  if(global_responseState->state!=STATE_CONNECTED){
 	  return 0;
   }
   else{
 	  return 1;
   }
-
-  free(response_array);
 }
 
 char **split_lines(const char *buffer, int *line_count)
@@ -400,135 +397,66 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
     dest[j] = '\0';
 }
 
-void read_lines(const char** lines){
-	if (lines != NULL) {
-		for (int i = 0; i < number_of_lines_in_response; i++) {
-			//printf("Linea %d: %s\n", i + 1, lines[i]);
-			Bool matched = 0;
-			Bool from_pc = 0;
-			response_t pc;
-
-			for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-			    if (strstr(lines[i], keywords[k].keyword) != NULL) {
-			    	response_array[i] = keywords[k].response;
-			    	if((keywords[k].response == SEND_FROM_PC)||(keywords[k].response == CIPSEND_PC)){
-			    		from_pc = 1;
-			    		pc = keywords[k].response;
-			    	}
-
-			    	if((keywords[k].response == CIPSEND_READY)){
-			    		memset(tx_buffer, 0, BUFFER_SIZE);
-			    		strcpy(tx_buffer,data_to_send);
-			    		memset(data_to_send, 0, BUFFER_SIZE);
-			    		//global_action = SEND_TX;
-			    	}
-
-			        matched = 1;  // Marca que hubo coincidencia
-			        break;        // Rompe el bucle, no necesitamos buscar más
-			    }
-			}
-
-			if(from_pc == 1){
-				// Limpia el tx_buffer (opcional, para evitar datos residuales)
-				memset(tx_buffer, 0, BUFFER_SIZE);
-				memset(data_to_send, 0, BUFFER_SIZE);
-
-				// Concatenar las líneas restantes en tx_buffer
-
-				if(pc == CIPSEND_PC){
-					for (int j = i + 1; j < number_of_lines_in_response; j++) {
-						strcat(data_to_send, lines[j]);
-					}
-					data_length = strlen(data_to_send);
-
-					sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_length);
-
-					//global_action = CIPSEND;
-				}
-
-				if(pc == SEND_FROM_PC){
-					for (int j = i + 1; j < number_of_lines_in_response; j++) {
-						strcat(tx_buffer, lines[j]);
-					}
-
-					//global_action = SEND_TX;
-				}
-
-				// Sal del bucle principal
-				break;
-			}
-
-			    // Verifica si la línea está vacía
-			if (!matched && strlen(lines[i]) == 0) {
-			    response_array[i] = EMPTY;
-			    matched = 1;
-			}
-
-			    // Si no se encontró ninguna coincidencia
-			if (!matched) {
-			    response_array[i] = UNKNOWN;
-			}
-	    }
+response_t match_respones(char* line){
+	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
+		if (strstr(line, keywords[k].keyword) != NULL) {
+			return keywords[k].response;
+		}
 	}
+	if (strlen(line) == 0) {
+		return EMPTY;
+	}
+	return UNKNOWN;
 }
 
-void send_tx(){
-	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	printf("%s",tx_buffer);
-	if(tx_buffer_size != -1){
-		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-	}
-}
+void get_responses() // time duration, between 1 and 2 milisecond
+{
+	int number_of_lines_in_response = 0;
 
-void get_responses(){
 	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
 
-	if(rx_buffer_init != -1){
-
-	    memset(rx_data,0,BUFFER_SIZE);
-	    copy_from_first_non_null(rx_data, &rx_buffer[rx_buffer_pos], (BUFFER_SIZE-(rx_buffer_pos)));
-
-	    memset(rx_buffer,0,BUFFER_SIZE);
-	    printf("%s.\n",rx_data);
-	    generate_responses();
-	}
-}
-
-void generate_responses() // time duration, between 1 and 2 milisecond
-{
-	//printf("Miliseconds when process_responses initiates: %lu ms\n", HAL_GetTick());
-	int rx_data_length = strlen(rx_data);
-
-	if(rx_data_length==0){
+	if(rx_buffer_init == -1){
 		return;
 	}
 
-	for(int i=0;i < rx_data_length;i++){
+	//Obtenemos el numero de lineas en la cenada a tratar
+	for(int i=rx_buffer_init;rx_buffer[i]!='\0';i++){
 		if(rx_data[i] == '\n'){
 			number_of_lines_in_response++;
 		}
 	}
 
-	char **lines = split_lines(rx_data, &number_of_lines_in_response);
+	// liberamos la memoria creada de anteriores ejecucuiones
+	for (int i = 0; i < number_of_lines_in_response; i++) {
+		free(lines[i]);
+	}
+	printf("Hola mundo\n");
+	free(lines);
+	//hacemos lineas de la cadena
+	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
+	//creamos un vector de tantas respuestas como lineas haya
+	free(response_array);
 
 	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
-	    // Imprimir las líneas separadas
+	printf("Hola mundo\n");
 	if (lines != NULL) {
-
-		read_lines(lines);
-
 		for (int i = 0; i < number_of_lines_in_response; i++) {
-			free(lines[i]);
+			printf("%s",lines[i]);
+			response_array[i] = match_respones(lines[i]);
 		}
-
-	    free(lines); // Liberar el array de punteros
 	}
-
     memset(rx_data,0,BUFFER_SIZE);
-    number_of_lines_in_response = 0;
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
+}
+
+void send_tx(){
+	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+	printf("%s",global_responseState->command);
+	if(tx_buffer_size != -1){
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+	}
 }
 
 Bool get_connection(const action_t action)
@@ -569,16 +497,20 @@ Bool get_connection(const action_t action)
 void task_handler(Process_state_t *state){
 	switch(*state){
 		case WAITING_FOR_CONNECTION:
-			if(get_connection(global_action_connection)){
-				*state = CONNECTED_IDLE;
-			}
+			get_connection(global_action_connection);
+			//if(get_connection(global_action_connection)){
+				//*state = CONNECTED_IDLE;
+			//}
 			break;
 		case CONNECTED_IDLE:
+			printf("Hola\n");
+			printf("get_connection devuelve: %d\n",get_connection(global_action_connection));
+			if(get_connection(global_action_connection)==0){
+				*state = WAITING_FOR_CONNECTION;
+			}
 			if(flag_dma_rx == 1){
 				//get_responses();
-				if(!get_connection(global_action_connection)){
-					*state = WAITING_FOR_CONNECTION;
-				}
+
 			}
 			break;
 		case GETTING_RESPONSES:
@@ -588,7 +520,7 @@ void task_handler(Process_state_t *state){
 
 }
 
-Process_state_t state = WAITING_FOR_CONNECTION;
+Process_state_t state = WAITING_FOR_CONNECTION, *state_ptr = &state;
 /* USER CODE END 0 */
 
 /**
@@ -637,19 +569,12 @@ int main(void)
   Bool flag_connected = 0;
 
 
-
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
   HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-
-
-  strcpy(tx_buffer, comando_AT);
-  //strcpy(data_to_send, "Hola Mundo!");
-
-  send_tx();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -662,7 +587,9 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>500)){
     	time_communication_handling = HAL_GetTick();
-    	task_handler(&state);
+    	printf("adios\n");
+    	task_handler(state_ptr);
+    	printf("Hola\n");
     }
   }
   /* USER CODE END 3 */
