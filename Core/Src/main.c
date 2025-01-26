@@ -118,6 +118,10 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
 };
 
+
+com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
+action_t comm_action = IDLE;
+response_t* responses = NULL;
 /*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
 
@@ -171,17 +175,16 @@ void DMA1_Stream5_IRQHandler(void)
 {
     // Llama al manejador del HAL para procesar eventos estándar
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
-
+    //flag_dma_rx = 1;
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-    //flag_dma_rx = 1;
+
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
 		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
 
@@ -385,30 +388,29 @@ void send_tx(){
 	}
 }
 
-void task_handler(Process_state_t *state, com_state_wifi_card* current_wifi_com_status, action_t comm_action){
+void task_handler(Process_state_t *state, com_state_wifi_card* current_wifi_com_status, action_t *comm_action){
 
-  static response_t* responses = NULL;
+  //static response_t* responses = NULL;
   static size_t response_count = 0;
 
-  if(flag_dma_rx == 1){
-    if(check_dma_transfer_complete()){
+  if(check_dma_transfer_complete()){
       response_count = get_responses(&responses);
-      flag_dma_rx = 0;
-    }
-	}
-  if(comm_action == SEND_TX){
+  }
+
+
+  if(*comm_action == SEND_TX){
     send_tx();
-    comm_action = IDLE;
+    *comm_action = IDLE;
   }
 
 	switch(*state){
 		case WAITING_FOR_CONNECTION:
-      current_wifi_com_status = handle_wifi_card_state(responses,response_count,current_wifi_com_status);
+			current_wifi_com_status = handle_wifi_card_state(responses,response_count,current_wifi_com_status);
 			if(current_wifi_com_status->state == STATE_CONNECTED){
 				*state = CONNECTED_IDLE;
 			} else {
-        comm_action = SEND_TX;
-      }
+				*comm_action = SEND_TX;
+			}
 			break;
 		case CONNECTED_IDLE:
       // Process_state_t = check_responses();
@@ -470,8 +472,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
   Bool flag_connected = 0;
-  com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
-  action_t comm_action = IDLE;
+
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
@@ -498,7 +499,7 @@ int main(void)
     if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
     	//printf("adios\n");
-    	task_handler(state_ptr, current_wifi_com_status, comm_action);
+    	task_handler(state_ptr, current_wifi_com_status, &comm_action);
     	//printf("Hola\n");
     }
   }
