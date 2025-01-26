@@ -95,11 +95,8 @@ typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
 typedef enum {
 	SEND_TX,
-	PROCESSED_RX,
-	WAITING,
+	IDLE,
 }action_t;
-
-action_t global_action_connection = WAITING;
 
 response_t type_of_response = EMPTY;
 response_t *response_array;
@@ -120,9 +117,6 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_CONNECTED, CLOSED,"AT\r\n",STATE_DISCONNECTED},
 		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
 };
-
-com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
-
 
 /*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
@@ -224,89 +218,23 @@ void MX_USB_HOST_Process(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
-
-//char comando_AT_CIPSEND[]="AT+CIPSEND=";
-Bool set_tx_buffer(int length_response_array, com_state_wifi_card state_response){
-	if(strcmp(tx_buffer, state_response.command)!=0){
+com_state_wifi_card *handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card *current_wifi_com_status){
+  if(strcmp(tx_buffer, current_wifi_com_status->command)!=0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
-		strcpy(tx_buffer, state_response.command);
+		strcpy(tx_buffer, current_wifi_com_status->command);
 	}
-	for(int i=0;i < length_response_array;i++){
-		if (response_array[i] == state_response.response) {
+	for(int i=0;i < reponses_size;i++){
+		if (reponses[i] == current_wifi_com_status->command) {
 			memset(tx_buffer, 0, BUFFER_SIZE);
-			return 1;
-		}
-	}
-	return 0;
-}
-
-com_state_wifi_card *next(com_state_wifi_card state_response){
-	for(int i=0; i < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));i++){
-		if(state_response.next_state==com_wifi_card_values[i].state){
-			return &com_wifi_card_values[i];
+      for(int k=0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
+		    if(current_wifi_com_status->next_state==com_wifi_card_values[k].state){
+          strcpy(tx_buffer, com_wifi_card_values[k].command);
+			    return &com_wifi_card_values[k];
+		    }
+	    }
 		}
 	}
 	return current_wifi_com_status;
-}
-
-Bool handle_wifi_card_state(com_state_wifi_card current_response_state)
-{
-  int length_response_array;
-
-  if(response_array!=NULL){
-	  length_response_array = sizeof(response_array)/sizeof(response_t);
-  }
-  else{
-	  length_response_array = 0;
-  }
-
-  switch (current_response_state.state)
-  {
-  	  case STATE_WAITING_COM:
-  		 if(set_tx_buffer(length_response_array,current_response_state)){
-  			 current_wifi_com_status = next(current_response_state);
-  		 }
-  		 break;
-  	  case STATE_COM_OK:
-  		  if(set_tx_buffer(length_response_array,current_response_state)){
-  			  current_wifi_com_status = next(current_response_state);
-  		  }
-  		  break;
-      case STATE_CWMODE_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  current_wifi_com_status = next(current_response_state);
-    	  }
-    	  break;
-      case STATE_CWJAP_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  current_wifi_com_status = next(current_response_state);
-    	  }
-          break;
-      case STATE_CIPMUX_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  current_wifi_com_status = next(current_response_state);
-    	  }
-          break;
-      case STATE_CONNECTED:
-    	  printf("Estamos en el estado connected\n");
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  printf("Estamos en el estado connected\n");
-    		  current_wifi_com_status = next(current_response_state);
-    	  }
-    	  break;
-      case STATE_DISCONNECTED:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  current_wifi_com_status = next(current_response_state);
-    	  }
-    	  break;
-  }
-  if(current_wifi_com_status->state!=STATE_CONNECTED){
-	  return 0;
-  }
-  else{
-	  return 1;
-  }
 }
 
 char **split_lines(const char *buffer, int *line_count)
@@ -457,64 +385,35 @@ void send_tx(){
 	}
 }
 
-Bool get_connection(const action_t action)
-{
-	switch(action){
-		case SEND_TX:
-			send_tx();
-			global_action_connection = WAITING;
-			break;
-		case WAITING:
-			if(check_dma_transfer_complete()){
-				global_action_connection = PROCESSED_RX;
-			}
-			break;
-		case PROCESSED_RX:
-			get_responses();
-			if(current_wifi_com_status->state!=STATE_CONNECTED){
-				if(handle_wifi_card_state(*current_wifi_com_status)){
-					global_action_connection = WAITING;
-				}
-				else{
-					global_action_connection = SEND_TX;
-				}
-			}
-			break;
-		default:
-			global_action_connection = WAITING;
-			break;
-	}
-	if(current_wifi_com_status->state!=STATE_CONNECTED){
-		return 0;
-	}
-	else{
-		return 1;
-	}
-}
-
-void task_handler(Process_state_t *state){
+void task_handler(Process_state_t *state, com_state_wifi_card* current_wifi_com_status, action_t comm_action){
 
   static response_t* responses = NULL;
   static size_t response_count = 0;
 
-  response_count = get_responses(&responses);
+  if(flag_dma_rx == 1){
+    if(check_dma_transfer_complete()){
+      response_count = get_responses(&responses);
+      flag_dma_rx = 0;
+    }
+	}
+  if(comm_action == SEND_TX){
+    send_tx();
+    comm_action = IDLE;
+  }
 
 	switch(*state){
 		case WAITING_FOR_CONNECTION:
-			get_connection(global_action_connection);
-			//if(get_connection(global_action_connection)){
-				//*state = CONNECTED_IDLE;
-			//}
+      current_wifi_com_status = handle_wifi_card_state(responses,response_count,current_wifi_com_status);
+			if(current_wifi_com_status->state == STATE_CONNECTED){
+				*state = CONNECTED_IDLE;
+			} else {
+        comm_action = SEND_TX;
+      }
 			break;
 		case CONNECTED_IDLE:
-			printf("Hola\n");
-			printf("get_connection devuelve: %d\n",get_connection(global_action_connection));
-			if(get_connection(global_action_connection)==0){
+      // Process_state_t = check_responses();
+			if(current_wifi_com_status->state != STATE_CONNECTED){
 				*state = WAITING_FOR_CONNECTION;
-			}
-			if(flag_dma_rx == 1){
-				//response_count = get_responses(&responses);
-
 			}
 			break;
 		case GETTING_RESPONSES:
@@ -571,6 +470,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
   Bool flag_connected = 0;
+  com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
+  action_t comm_action = IDLE;
 
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
@@ -597,7 +498,7 @@ int main(void)
     if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
     	//printf("adios\n");
-    	task_handler(state_ptr);
+    	task_handler(state_ptr, current_wifi_com_status, comm_action);
     	//printf("Hola\n");
     }
   }
