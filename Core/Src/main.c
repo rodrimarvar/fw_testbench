@@ -349,7 +349,7 @@ char **split_lines(const char *buffer, int *line_count)
 }
 
 //__attribute__((optimize("O0")))
-int find_first_non_null(char *str, int size)
+int find_first_non_null(const char *str, int size)
 {
 	int i = 0;
 	while (i < size) {
@@ -417,7 +417,7 @@ void get_responses() // time duration, between 1 and 2 milisecond
 	int number_of_lines_in_response = 0;
 
 	flag_firs_non_null = 0;
-	rx_buffer_init = find_first_non_null(&rx_buffer,BUFFER_SIZE);
+	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
 
 	if(rx_buffer_init == -1){
 		printf("rx_buffer_init = -1\n");
@@ -435,7 +435,7 @@ void get_responses() // time duration, between 1 and 2 milisecond
 	for (int i = 0; i < number_of_lines_in_response; i++) {
 		free(lines[i]);
 	}
-	printf("Hola mundo\n");
+
 	free(lines);
 	//hacemos lineas de la cadena
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
@@ -444,7 +444,6 @@ void get_responses() // time duration, between 1 and 2 milisecond
 
 	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
-	printf("Hola mundo\n");
 	if (lines != NULL) {
 		for (int i = 0; i < number_of_lines_in_response; i++) {
 			printf("%s",lines[i]);
@@ -457,12 +456,9 @@ void get_responses() // time duration, between 1 and 2 milisecond
 void send_tx(){
 	//memset(rx_buffer,0,BUFFER_SIZE);
 	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	printf("%s",global_responseState->command);
+	printf("%s",tx_buffer);
 	if(tx_buffer_size != -1){
-		printf("%s",tx_buffer);
-		//HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,tx_buffer_size,HAL_MAX_DELAY);
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
 	}
 }
 
