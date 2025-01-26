@@ -168,7 +168,7 @@ int data_length = 0;
 
 int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
 
-Bool flag_dma_rx = 0;
+Bool flag_dma_rx = 0, flag_firs_non_null = 0;
 
 char **lines;
 
@@ -177,16 +177,17 @@ void DMA1_Stream5_IRQHandler(void)
 {
     // Llama al manejador del HAL para procesar eventos estándar
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
-    flag_dma_rx = 1;
+
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+    flag_dma_rx = 1;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2){
-		//HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
-		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		HAL_UART_Receive(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE,2000);
+		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
 
@@ -348,12 +349,14 @@ char **split_lines(const char *buffer, int *line_count)
 }
 
 //__attribute__((optimize("O0")))
-int find_first_non_null(const char *str, int size)
+int find_first_non_null(char *str, int size)
 {
 	int i = 0;
 	while (i < size) {
+
 		//printf("i = %d\n",i);
 		if (str[i] != '\0') {
+			flag_firs_non_null = 1;
 			return i; // Retorna la posición del primer carácter no nulo
 	    }
 	    i++;
@@ -413,9 +416,11 @@ void get_responses() // time duration, between 1 and 2 milisecond
 {
 	int number_of_lines_in_response = 0;
 
-	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
+	flag_firs_non_null = 0;
+	rx_buffer_init = find_first_non_null(&rx_buffer,BUFFER_SIZE);
 
 	if(rx_buffer_init == -1){
+		printf("rx_buffer_init = -1\n");
 		return;
 	}
 
@@ -446,15 +451,17 @@ void get_responses() // time duration, between 1 and 2 milisecond
 			response_array[i] = match_respones(lines[i]);
 		}
 	}
-    memset(rx_data,0,BUFFER_SIZE);
     //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
 void send_tx(){
+	//memset(rx_buffer,0,BUFFER_SIZE);
 	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
 	printf("%s",global_responseState->command);
 	if(tx_buffer_size != -1){
-		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		printf("%s",tx_buffer);
+		//HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,tx_buffer_size,HAL_MAX_DELAY);
 		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 	}
 }
@@ -575,6 +582,11 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
   HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+
+  strcpy(tx_buffer, comando_AT);
+
+  send_tx();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -585,11 +597,11 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((HAL_GetTick()-time_communication_handling>500)){
+    if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
-    	printf("adios\n");
+    	//printf("adios\n");
     	task_handler(state_ptr);
-    	printf("Hola\n");
+    	//printf("Hola\n");
     }
   }
   /* USER CODE END 3 */
