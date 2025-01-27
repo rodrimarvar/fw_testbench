@@ -410,25 +410,26 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
   // printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-void send_tx(){
-	//memset(rx_buffer,0,BUFFER_SIZE);
-	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	printf("send_tx() %s",tx_buffer);
-	if(tx_buffer_size != -1){
-		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+Bool send_tx(Process_state_t state){
+	if(state != CONNECTED_IDLE){
+		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+		printf("send_tx() %s",tx_buffer);
+
+		if(tx_buffer_size != -1){
+			HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+			HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+			return 1;
+		}
 	}
+	return 0;
 }
 
 void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status, action_t *comm_action){
-
-  //static response_t* responses = NULL;
   static size_t response_count = 0;
 
   if(check_dma_transfer_complete()){
       response_count = get_responses(&responses);
   }
-
 
   for(int i = 0;i < response_count;i++){
 	  for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
@@ -448,28 +449,25 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
 	  }
   }
 
-  if(*comm_action == SEND_TX){
-    send_tx();
-    *comm_action = IDLE;
+  send_tx(*state);
+
+  switch(*state){
+  	  case WAITING_FOR_CONNECTION:
+  		  if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
+  			  *state = CONNECTED_IDLE;
+  		  }else{
+  			  *comm_action = SEND_TX;
+  		  }
+  		  break;
+  	  case CONNECTED_IDLE:
+  		  if((*current_wifi_com_status)->state != STATE_CONNECTED){
+  			  *state = WAITING_FOR_CONNECTION;
+  		  }
+  		  break;
+  	  case GETTING_RESPONSES:
+
+  		  break;
   }
-
-	switch(*state){
-		case WAITING_FOR_CONNECTION:
-			if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
-				*state = CONNECTED_IDLE;
-			}else{
-				*comm_action = SEND_TX;
-			}
-			break;
-		case CONNECTED_IDLE:
-			if((*current_wifi_com_status)->state != STATE_CONNECTED){
-				*state = WAITING_FOR_CONNECTION;
-			}
-			break;
-		case GETTING_RESPONSES:
-
-			break;
-	}
 
 }
 
@@ -533,9 +531,6 @@ int main(void)
   //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 
   strcpy(tx_buffer, comando_AT);
-
-  send_tx();
-  HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
