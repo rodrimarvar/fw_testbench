@@ -273,65 +273,6 @@ Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_stat
 }
 
 
-<<<<<<< HEAD
-Bool handlestate(stateResponse current_response_state)
-{
-  int length_response_array;
-
-  if(response_array!=NULL){
-	  length_response_array = sizeof(response_array)/sizeof(response_t);
-  }
-  else{
-	  length_response_array = 0;
-  }
-
-  switch (current_response_state.state)
-  {
-  	  case STATE_WAITING_COM:
-  		 if(set_tx_buffer(length_response_array,current_response_state)){
-  			 global_responseState = next(current_response_state);
-  		 }
-  		 break;
-  	  case STATE_COM_OK:
-  		  if(set_tx_buffer(length_response_array,current_response_state)){
-  			  global_responseState = next(current_response_state);
-  		  }
-  		  break;
-      case STATE_CWMODE_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
-    	  }
-    	  break;
-      case STATE_CWJAP_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
-    	  }
-          break;
-      case STATE_CIPMUX_OK:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
-    	  }
-          break;
-      case STATE_CONNECTED:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
-    	  }
-    	  break;
-      case STATE_DISCONNECTED:
-    	  if(set_tx_buffer(length_response_array,current_response_state)){
-    		  global_responseState = next(current_response_state);
-    	  }
-    	  break;
-  }
-  if(global_responseState->state!=STATE_CONNECTED){
-	  return 0;
-  }
-  else{
-	  return 1;
-  }
-}
-=======
->>>>>>> feature/prueba-get-repons
 
 char **split_lines(const char *buffer, int *line_count)
 {
@@ -480,32 +421,7 @@ Bool send_tx(Process_state_t state){
 			return 1;
 		}
 	}
-<<<<<<< HEAD
-
-	char **lines = split_lines(rx_data, &number_of_lines_in_response);
-
-	free(response_array);
-
-	response_array = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
-
-	    // Imprimir las líneas separadas
-	if (lines != NULL) {
-
-		read_lines(lines);
-
-		for (int i = 0; i < number_of_lines_in_response; i++) {
-			free(lines[i]);
-		}
-
-	    free(lines); // Liberar el array de punteros
-	}
-
-    memset(rx_data,0,BUFFER_SIZE);
-    number_of_lines_in_response = 0;
-    //printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
-=======
 	return 0;
->>>>>>> feature/prueba-get-repons
 }
 
 void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status, action_t *comm_action){
@@ -625,11 +541,7 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-<<<<<<< HEAD
-    if((HAL_GetTick()-time_communication_handling>3000)){
-=======
     if((HAL_GetTick()-time_communication_handling>1000)){
->>>>>>> feature/prueba-get-repons
     	time_communication_handling = HAL_GetTick();
     	task_handler(state_ptr, &current_wifi_com_status, &comm_action);
     }
