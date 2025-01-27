@@ -45,7 +45,8 @@ typedef enum {
 typedef enum{
 	WAITING_FOR_CONNECTION,
 	CONNECTED_IDLE,
-	GETTING_RESPONSES,
+	SEND_TO_PC,
+	READ_BME280,
 }Process_state_t;
 
 typedef enum {
@@ -79,6 +80,7 @@ KeywordResponse keywords[] = {
 		{"CIPSEND_PC", CIPSEND_PC},
 		{">", CIPSEND_READY},
 		{"CLOSED", SERVER_CLOSED},
+		{"READ_BME280",READ_BME280},
 };
 
 char comando_AT[]="AT\r\n";
@@ -92,11 +94,6 @@ char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single con
 char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
-
-typedef enum {
-	SEND_TX,
-	IDLE,
-}action_t;
 
 response_t type_of_response = EMPTY;
 response_t *response_array;
@@ -113,14 +110,34 @@ com_state_wifi_card com_wifi_card_values[] = {
         {STATE_COM_OK, OK,"AT+CWMODE=3\r\n",STATE_CWMODE_OK},
         {STATE_CWMODE_OK, OK,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",STATE_CWJAP_OK},
         {STATE_CWJAP_OK, OK,"AT+CIPMUX=0\r\n",STATE_CIPMUX_OK},
-		{STATE_CIPMUX_OK, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
-		{STATE_CONNECTED, CLOSED,"AT\r\n",STATE_DISCONNECTED},
-		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_CONNECTED},
+		{STATE_CIPMUX_OK, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_DISCONNECTED},
+		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_DISCONNECTED},
+};
+
+typedef struct {
+	const response_t response;
+	const Process_state_t next_state;
+}idle_keys;
+
+idle_keys idle_transitions[] = {
+        {CLOSED, WAITING_FOR_CONNECTION},
+		{SEND_TO_PC,SEND_TO_PC},
+		{READ_BME280,READ_BME280},
+};
+
+typedef struct {
+	const Process_state_t state;
+	const Process_state_t next_state;
+}task_transitions;
+
+task_transitions task_transition[] = {
+		{WAITING_FOR_CONNECTION, CONNECTED_IDLE},
+		{SEND_TO_PC, CONNECTED_IDLE},
+		{READ_BME280, SEND_TO_PC},
 };
 
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
-action_t comm_action = IDLE;
 response_t* responses = NULL;
 /*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
@@ -164,7 +181,7 @@ char data_to_send[BUFFER_SIZE];
 
 int data_length = 0;
 
-int rx_buffer_pos = 0, tx_buffer_size = 0, rx_buffer_init = 0;
+int tx_buffer_size = 0, rx_buffer_init = 0;
 
 volatile Bool flag_dma_rx = 0;
 
@@ -229,10 +246,6 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-#include <stdio.h>
-#include <string.h>
-
 void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     if (strcmp(buffer, new_content) == 0) {
         return; // Si son iguales, no hace nada
@@ -244,11 +257,7 @@ void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     buffer[buffer_size - 1] = '\0'; // Asegura la terminación nula
 }
 
-
 Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card **current_wifi_com_status){
-	if(reponses_size==0){
-		return 0;
-	}
 	update_buffer(tx_buffer, BUFFER_SIZE,(*current_wifi_com_status)->command);
 
 	for(int i=0;i < reponses_size;i++){
@@ -258,7 +267,7 @@ Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_stat
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
 
-					if((*current_wifi_com_status)->state == STATE_CONNECTED){
+					if(((*current_wifi_com_status)->state == STATE_DISCONNECTED)){
 						memset(tx_buffer,0,BUFFER_SIZE);
 						return 1;
 					}
@@ -271,8 +280,6 @@ Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_stat
 	}
 	return 0;
 }
-
-
 
 char **split_lines(const char *buffer, int *line_count)
 {
@@ -424,29 +431,32 @@ Bool send_tx(Process_state_t state){
 	return 0;
 }
 
-void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status, action_t *comm_action){
+Process_state_t assigne_task(response_t *reponses, size_t reponses_size){
+	for(int i = 0;i < reponses_size;i++){
+		for (size_t k = 0; k < sizeof(idle_transitions) / sizeof(idle_keys); k++) {
+			if(idle_transitions[k].response==reponses[i]){
+				return idle_transitions[k].next_state;
+
+			}
+		}
+	}
+	return CONNECTED_IDLE;
+}
+
+Bool check_connection(response_t *reponses, size_t reponses_size){
+	for(int i = 0;i < reponses_size;i++){
+		if(responses[i] == CLOSED){
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status){
   static size_t response_count = 0;
 
   if(check_dma_transfer_complete()){
       response_count = get_responses(&responses);
-  }
-
-  for(int i = 0;i < response_count;i++){
-	  for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-		  if (keywords[k].response == responses[i]) {
-			  printf("Hay una respuesta que es: %s\n",keywords[k].keyword);
-			  if(responses[i] == UNKNOWN){
-				  printf("Hay una respuesta que es: UNKNOWN\n");
-			  }
-			  if(responses[i] == EMPTY){
-				  printf("Hay una respuesta que es: EMPTY\n");
-			  }
-			  if(responses[i] == CLOSED){
-				  printf("Hay una respuesta que es: CLOSED\n");
-				  handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status));
-			  }
-		  }
-	  }
   }
 
   send_tx(*state);
@@ -455,17 +465,25 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
   	  case WAITING_FOR_CONNECTION:
   		  if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
   			  *state = CONNECTED_IDLE;
-  		  }else{
-  			  *comm_action = SEND_TX;
   		  }
   		  break;
   	  case CONNECTED_IDLE:
-  		  if((*current_wifi_com_status)->state != STATE_CONNECTED){
+  		  *state = assigne_task(responses, response_count);
+  		  if(check_connection(responses, response_count)){
+  			*state = WAITING_FOR_CONNECTION;
+  		  }
+  		  break;
+  	  case SEND_TO_PC:
+  		  printf("Estoy en SEND_TO_PC state\n");
+  		  if(check_connection(responses, response_count)){
   			  *state = WAITING_FOR_CONNECTION;
   		  }
   		  break;
-  	  case GETTING_RESPONSES:
-
+  	  case READ_BME280:
+  		  printf("Estoy en READ_BME280 state\n");
+  		  if(check_connection(responses, response_count)){
+  			  *state = WAITING_FOR_CONNECTION;
+  		  }
   		  break;
   }
 
@@ -543,7 +561,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
-    	task_handler(state_ptr, &current_wifi_com_status, &comm_action);
+    	task_handler(state_ptr, &current_wifi_com_status);
     }
   }
   /* USER CODE END 3 */
