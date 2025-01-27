@@ -499,7 +499,6 @@ int main(void)
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
-  Bool flag_connected = 0;
 
 
 
@@ -527,9 +526,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
-    	//printf("adios\n");
     	task_handler(state_ptr, &current_wifi_com_status, &comm_action);
-    	//printf("Hola\n");
     }
   }
   /* USER CODE END 3 */
