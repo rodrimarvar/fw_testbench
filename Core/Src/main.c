@@ -230,24 +230,37 @@ void MX_USB_HOST_Process(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-com_state_wifi_card *handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card *current_wifi_com_status){
-  if(strcmp(tx_buffer, current_wifi_com_status->command)!=0){
+Process_state_t handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card **current_wifi_com_status, action_t *comm_action, int response_count){
+	if(response_count==0){
+		*comm_action = SEND_TX;
+		return WAITING_FOR_CONNECTION;
+	}
+	if(strcmp(tx_buffer, (*current_wifi_com_status)->command)!=0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
-		strcpy(tx_buffer, current_wifi_com_status->command);
+		strcpy(tx_buffer, (*current_wifi_com_status)->command);
 	}
 	for(int i=0;i < reponses_size;i++){
-		if (reponses[i] == current_wifi_com_status->response) {
+		if (reponses[i] == (*current_wifi_com_status)->response) {
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			for(int k=0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
-				if(current_wifi_com_status->next_state==com_wifi_card_values[k].state){
+				if((*current_wifi_com_status)->next_state==com_wifi_card_values[k].state){
 					strcpy(tx_buffer, com_wifi_card_values[k].command);
 					//printf("handlestate %s",tx_buffer);
-					return &com_wifi_card_values[k];
+					(*current_wifi_com_status) = &com_wifi_card_values[k];
+					if((*current_wifi_com_status)->state == STATE_CONNECTED){
+						*comm_action = IDLE;
+						return CONNECTED_IDLE;
+					}
+					else{
+						*comm_action = SEND_TX;
+						return WAITING_FOR_CONNECTION;
+					}
 				}
 			}
 		}
 	}
-	return current_wifi_com_status;
+	*comm_action = SEND_TX;
+	return WAITING_FOR_CONNECTION;
 }
 
 char **split_lines(const char *buffer, int *line_count)
@@ -416,7 +429,7 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
 				  printf("Hay una respuesta que es: EMPTY\n");
 			  }
 			  if(responses[i] == CLOSED){
-				  (*current_wifi_com_status) = handle_wifi_card_state(responses,response_count,(*current_wifi_com_status));
+				  printf("Hay una respuesta que es: CLOSED\n");
 			  }
 		  }
 	  }
@@ -429,18 +442,11 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
 
 	switch(*state){
 		case WAITING_FOR_CONNECTION:
-			if((*current_wifi_com_status)->state == STATE_CONNECTED){
-				*state = CONNECTED_IDLE;
-			} else {
-				if(response_count != 0){
-					//printf("Estado actual: %d, Comando: %s\n", (*current_wifi_com_status)->state,(*current_wifi_com_status)->command);
-					(*current_wifi_com_status) = handle_wifi_card_state(responses,response_count,(*current_wifi_com_status));
-					//printf("Estado actual: %d, Comando: %s\n", (*current_wifi_com_status)->state,(*current_wifi_com_status)->command);
-				}
-				*comm_action = SEND_TX;
-			}
+			printf("WAITING_FOR_CONNECTION\n");
+			*state = handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status),comm_action,response_count);
 			break;
 		case CONNECTED_IDLE:
+			printf("CONNECTED_IDLE\n");
       // Process_state_t = check_responses();
 			if((*current_wifi_com_status)->state != STATE_CONNECTED){
 				*state = WAITING_FOR_CONNECTION;
@@ -454,6 +460,8 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
 }
 
 Process_state_t state = WAITING_FOR_CONNECTION, *state_ptr = &state;
+//Process_state_t **state_ptr_ptr = &state_ptr; // Puntero doble que apunta a state_ptr
+
 /* USER CODE END 0 */
 
 /**
