@@ -22,13 +22,124 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include<stdio.h>
-#include<string.h>
+#include <stdio.h>
+#include <string.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <malloc.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+/*********************************** Maquina de estados typedefs ****************************************/
+typedef enum {
+	STATE_WAITING_COM,
+    STATE_COM_OK,
+    STATE_CWMODE_OK,
+    STATE_CWJAP_OK,
+    STATE_CIPMUX_OK,
+	STATE_CONNECTED,
+	STATE_DISCONNECTED,
+}Conection_State_t;
 
+typedef enum{
+	WAITING_FOR_CONNECTION,
+	CONNECTED_IDLE,
+	SEND_TO_PC,
+	READ_BME280,
+}Process_state_t;
+
+typedef enum {
+	OK,
+	CONNECT,
+	CLOSED,
+	BUSY,
+	ERR,
+	AT,
+	EMPTY,
+	SEND_FROM_PC,
+	SERVER_CLOSED,
+	CIPSEND_READY,
+	CIPSEND_PC,
+	UNKNOWN
+}response_t; // Don't use ERROR the stm already uses it
+
+typedef struct {
+        const char *keyword;
+        response_t response;
+} KeywordResponse;
+
+KeywordResponse keywords[] = {
+        {"CONNECT", CONNECT},
+        {"CLOSED", CLOSED},
+        {"OK", OK},
+        {"ERROR", ERR},
+        {"busy", BUSY},
+        {"AT", AT},
+		{"SEND_FROM_PC", SEND_FROM_PC},
+		{"CIPSEND_PC", CIPSEND_PC},
+		{">", CIPSEND_READY},
+		{"CLOSED", SERVER_CLOSED},
+		{"READ_BME280",READ_BME280},
+};
+
+char comando_AT[]="AT\r\n";
+
+char comando_AT_CWMODE[]="AT+CWMODE=3\r\n";//Poner el ESP8266 en modo AP y conexión WIFI
+
+char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar el ESP8266 a la red WIFI
+
+char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
+
+char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+
+typedef enum { FALSE = 0, TRUE = 1 } Bool;
+
+response_t type_of_response = EMPTY;
+response_t *response_array;
+
+typedef struct {
+        const Conection_State_t state;
+        const response_t response;
+        const char command[50];
+        const Conection_State_t next_state;
+} com_state_wifi_card;
+
+com_state_wifi_card com_wifi_card_values[] = {
+        {STATE_WAITING_COM, OK,"AT\r\n",STATE_COM_OK},
+        {STATE_COM_OK, OK,"AT+CWMODE=3\r\n",STATE_CWMODE_OK},
+        {STATE_CWMODE_OK, OK,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",STATE_CWJAP_OK},
+        {STATE_CWJAP_OK, OK,"AT+CIPMUX=0\r\n",STATE_CIPMUX_OK},
+		{STATE_CIPMUX_OK, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_DISCONNECTED},
+		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_DISCONNECTED},
+};
+
+typedef struct {
+	const response_t response;
+	const Process_state_t next_state;
+}idle_keys;
+
+idle_keys idle_transitions[] = {
+        {CLOSED, WAITING_FOR_CONNECTION},
+		{SEND_TO_PC,SEND_TO_PC},
+		{READ_BME280,READ_BME280},
+};
+
+typedef struct {
+	const Process_state_t state;
+	const Process_state_t next_state;
+}task_transitions;
+
+task_transitions task_transition[] = {
+		{WAITING_FOR_CONNECTION, CONNECTED_IDLE},
+		{SEND_TO_PC, CONNECTED_IDLE},
+		{READ_BME280, SEND_TO_PC},
+};
+
+
+com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
+response_t* responses = NULL;
+/*********************************** Maquina de estados typedefs ****************************************/
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -58,15 +169,68 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
+DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
+#define BUFFER_SIZE 100
+char rx_buffer[BUFFER_SIZE];
+char rx_data[BUFFER_SIZE];
+char tx_buffer[BUFFER_SIZE];
+char data_to_send[BUFFER_SIZE];
 
+int data_length = 0;
+
+int tx_buffer_size = 0, rx_buffer_init = 0;
+
+volatile Bool flag_dma_rx = 0;
+
+char **lines;
+
+
+void DMA1_Stream5_IRQHandler(void)
+{
+    // Llama al manejador del HAL para procesar eventos estándar
+    HAL_DMA_IRQHandler(&hdma_usart2_rx);
+
+    flag_dma_rx = 1;
+    // Tu código personalizado
+    HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART2){
+		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		DMA1->LIFCR = DMA_HIFCR_CTCIF5 | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTEIF5;
+	}
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART2){
+		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		DMA1->LIFCR = DMA_HIFCR_CTCIF6 | DMA_HIFCR_CHTIF6 | DMA_HIFCR_CTEIF6;
+	}
+}
+
+Bool check_dma_transfer_complete(void) {
+    if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
+        // Activar una bandera o procesar los datos
+
+        // Limpia el flag de transferencia completa
+        __HAL_DMA_CLEAR_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5);
+        return 1;
+    }
+    return 0;
+}
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2S3_Init(void);
@@ -82,6 +246,251 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
+    if (strcmp(buffer, new_content) == 0) {
+        return; // Si son iguales, no hace nada
+    }
+
+    memset(buffer, 0, buffer_size);
+
+    strncpy(buffer, new_content, buffer_size - 1); // Protege contra desbordamientos
+    buffer[buffer_size - 1] = '\0'; // Asegura la terminación nula
+}
+
+Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card **current_wifi_com_status){
+	update_buffer(tx_buffer, BUFFER_SIZE,(*current_wifi_com_status)->command);
+
+	for(int i=0;i < reponses_size;i++){
+		if (reponses[i] == (*current_wifi_com_status)->response) {
+			for(int k=0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
+				if((*current_wifi_com_status)->next_state==com_wifi_card_values[k].state){
+					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
+					(*current_wifi_com_status) = &com_wifi_card_values[k];
+
+					if(((*current_wifi_com_status)->state == STATE_DISCONNECTED)){
+						memset(tx_buffer,0,BUFFER_SIZE);
+						return 1;
+					}
+					else{
+						return 0;
+					}
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+char **split_lines(const char *buffer, int *line_count)
+{
+    char **lines = NULL;
+    int count = 0;
+    const char *start = buffer;
+    const char *end;
+
+    while ((end = strchr(start, '\n')) != NULL) {
+        size_t line_length = end - start;
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        if (lines == NULL) {
+            printf("Error: No se pudo asignar memoria.\n");
+            return NULL;
+        }
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        if (lines[count] == NULL) {
+            printf("Error: No se pudo asignar memoria para la línea %d.\n", count);
+            return NULL;
+        }
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0'; // Asegurar terminación nula
+        count++;
+        start = end + 1; // Continuar después de '\n'
+    }
+
+    // Añadir la última línea si no termina en '\n'
+    if (*start != '\0') {
+        lines = (char **)realloc(lines, (count + 1) * sizeof(char *));
+        size_t line_length = strlen(start);
+        lines[count] = (char *)malloc((line_length + 1) * sizeof(char));
+        strncpy(lines[count], start, line_length);
+        lines[count][line_length] = '\0';
+        count++;
+    }
+
+    *line_count = count;
+    return lines;
+}
+
+//__attribute__((optimize("O0")))
+int find_first_non_null(const char *str, int size)
+{
+	int i = 0;
+	while (i < size) {
+		//printf("i = %d\n",i);
+		if (str[i] != '\0') {
+			return i; // Retorna la posición del primer carácter no nulo
+	    }
+	    i++;
+	}
+
+    return -1;
+}
+
+int find_null_position(const char *str, int size)
+{
+    if (str == NULL) {
+        return -1; // Manejo de error si la cadena es NULL
+    }
+
+    for (int i = 0; i < size ; i++) {
+        if ((str[i] == '\0')&&(i !=0)) {
+            return i; // Retorna la posición del carácter nulo
+        }
+    }
+
+    // No debería llegar aquí porque toda cadena válida debe tener un '\0'
+    return -1;
+}
+
+void copy_from_first_non_null(char *dest, const char *src, int size)
+{
+    int i = 0;
+
+    // Buscar el primer carácter no nulo en la cadena de origen
+    while (i < size && src[i] == '\0') {
+        i++;  // Avanzar hasta encontrar el primer carácter no nulo
+    }
+
+    // Copiar a la cadena de destino a partir de ese carácter
+    int j = 0;
+    for (; i < size && src[i] != '\0'; i++, j++) {
+        dest[j] = src[i];
+    }
+
+    // Asegurarse de que la cadena de destino termine con '\0'
+    dest[j] = '\0';
+}
+
+response_t match_respones(char* line){
+	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
+		if (strstr(line, keywords[k].keyword) != NULL) {
+			return keywords[k].response;
+		}
+	}
+	if (strlen(line) == 0) {
+		return EMPTY;
+	}
+	return UNKNOWN;
+}
+
+size_t get_responses(response_t **responses) // time duration, between 1 and 2 milisecond
+{
+	int number_of_lines_in_response = 0;
+
+	// free(response_array);
+	rx_buffer_init = find_first_non_null(rx_buffer,BUFFER_SIZE);
+
+  if (rx_buffer_init == -1) {
+    printf("rx_buffer_init = -1\n");
+    *responses = NULL; // Asegura que no apuntamos a datos inválidos
+    return 0;
+  }
+
+	//hacemos lineas de la cadena
+	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
+	memset(rx_buffer, 0, BUFFER_SIZE);
+
+	*responses = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
+
+  if (*responses == NULL) {
+    return 0;
+  }
+
+  if (lines != NULL) {
+    for (int i = 0; i < number_of_lines_in_response; i++) {
+      printf("%s",lines[i]);
+      (*responses)[i] = match_respones(lines[i]);
+      free(lines[i]);
+    }
+  }
+  free(lines);
+  return number_of_lines_in_response;
+  // printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
+}
+
+Bool send_tx(Process_state_t state){
+	if(state != CONNECTED_IDLE){
+		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+		printf("send_tx() %s",tx_buffer);
+
+		if(tx_buffer_size != -1){
+			HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+			HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+Process_state_t assigne_task(response_t *reponses, size_t reponses_size){
+	for(int i = 0;i < reponses_size;i++){
+		for (size_t k = 0; k < sizeof(idle_transitions) / sizeof(idle_keys); k++) {
+			if(idle_transitions[k].response==reponses[i]){
+				return idle_transitions[k].next_state;
+
+			}
+		}
+	}
+	return CONNECTED_IDLE;
+}
+
+Bool check_connection(response_t *reponses, size_t reponses_size){
+	for(int i = 0;i < reponses_size;i++){
+		if(responses[i] == CLOSED){
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status){
+  static size_t response_count = 0;
+
+  if(check_dma_transfer_complete()){
+      response_count = get_responses(&responses);
+  }
+
+  send_tx(*state);
+
+  switch(*state){
+  	  case WAITING_FOR_CONNECTION:
+  		  if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
+  			  *state = CONNECTED_IDLE;
+  		  }
+  		  break;
+  	  case CONNECTED_IDLE:
+  		  *state = assigne_task(responses, response_count);
+  		  if(check_connection(responses, response_count)){
+  			*state = WAITING_FOR_CONNECTION;
+  		  }
+  		  break;
+  	  case SEND_TO_PC:
+  		  printf("Estoy en SEND_TO_PC state\n");
+  		  if(check_connection(responses, response_count)){
+  			  *state = WAITING_FOR_CONNECTION;
+  		  }
+  		  break;
+  	  case READ_BME280:
+  		  printf("Estoy en READ_BME280 state\n");
+  		  if(check_connection(responses, response_count)){
+  			  *state = WAITING_FOR_CONNECTION;
+  		  }
+  		  break;
+  }
+
+}
+
+Process_state_t state = WAITING_FOR_CONNECTION, *state_ptr = &state;
+//Process_state_t **state_ptr_ptr = &state_ptr; // Puntero doble que apunta a state_ptr
 
 /* USER CODE END 0 */
 
@@ -117,6 +526,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
   MX_I2S2_Init();
   MX_I2S3_Init();
@@ -126,7 +536,19 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+  uint32_t time_communication_handling = 0;
 
+
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+
+  //HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+
+  strcpy(tx_buffer, comando_AT);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,6 +559,10 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+    if((HAL_GetTick()-time_communication_handling>1000)){
+    	time_communication_handling = HAL_GetTick();
+    	task_handler(state_ptr, &current_wifi_com_status);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -457,6 +883,25 @@ static void MX_USART6_UART_Init(void)
   /* USER CODE BEGIN USART6_Init 2 */
 
   /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
