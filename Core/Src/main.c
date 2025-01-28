@@ -185,8 +185,6 @@ int data_length = 0;
 
 int tx_buffer_size = 0, rx_buffer_init = 0;
 
-volatile Bool flag_dma_rx = 0;
-
 char **lines;
 
 
@@ -195,7 +193,6 @@ void DMA1_Stream5_IRQHandler(void)
     // Llama al manejador del HAL para procesar eventos estándar
     HAL_DMA_IRQHandler(&hdma_usart2_rx);
 
-    flag_dma_rx = 1;
     // Tu código personalizado
     HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 }
@@ -457,9 +454,8 @@ Bool check_connection(response_t *reponses, size_t reponses_size){
 void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status){
   static size_t response_count = 0;
 
-  if((flag_dma_rx == 1)&&(check_dma_transfer_complete())){
+  if(check_dma_transfer_complete()){
 	  response_count = get_responses(&responses);
-	  flag_dma_rx = 0;
   }
 
   send_tx(*state);
