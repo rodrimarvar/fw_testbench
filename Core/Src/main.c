@@ -43,7 +43,7 @@ typedef enum {
 }Conection_State_t;
 
 typedef enum{
-	WAITING_FOR_CONNECTION,
+	TRYING_TO_CONNECT,
 	CONNECTED_IDLE,
 	SEND_TO_PC,
 	READ_BME280,
@@ -67,20 +67,21 @@ typedef enum {
 typedef struct {
         const char *keyword;
         response_t response;
+        Process_state_t state_corresponding_the_response;
 } KeywordResponse;
 
 KeywordResponse keywords[] = {
-        {"CONNECT", CONNECT},
-        {"CLOSED", CLOSED},
-        {"OK", OK},
-        {"ERROR", ERR},
-        {"busy", BUSY},
-        {"AT", AT},
-		{"SEND_FROM_PC", SEND_FROM_PC},
-		{"CIPSEND_PC", CIPSEND_PC},
-		{">", CIPSEND_READY},
-		{"CLOSED", SERVER_CLOSED},
-		{"READ_BME280",READ_BME280},
+        {"CONNECT", CONNECT, TRYING_TO_CONNECT},
+        {"CLOSED", CLOSED, CONNECTED_IDLE},
+        {"OK", OK, TRYING_TO_CONNECT},
+        {"ERROR", ERR, CONNECTED_IDLE},
+        {"busy", BUSY, CONNECTED_IDLE},
+        {"AT", AT, CONNECTED_IDLE},
+		{"SEND_FROM_PC", SEND_FROM_PC, CONNECTED_IDLE},
+		{"CIPSEND_PC", CIPSEND_PC, CONNECTED_IDLE},
+		{">", CIPSEND_READY, SEND_TO_PC},
+		{"CLOSED", SERVER_CLOSED, TRYING_TO_CONNECT},
+		{"READ_BME280",READ_BME280, CONNECTED_IDLE},
 };
 
 char comando_AT[]="AT\r\n";
@@ -120,7 +121,7 @@ typedef struct {
 }idle_keys;
 
 idle_keys idle_transitions[] = {
-        {CLOSED, WAITING_FOR_CONNECTION},
+        {CLOSED, TRYING_TO_CONNECT},
 		{SEND_TO_PC,SEND_TO_PC},
 		{READ_BME280,READ_BME280},
 };
@@ -131,10 +132,11 @@ typedef struct {
 }task_transitions;
 
 task_transitions task_transition[] = {
-		{WAITING_FOR_CONNECTION, CONNECTED_IDLE},
+		{TRYING_TO_CONNECT, CONNECTED_IDLE},
 		{SEND_TO_PC, CONNECTED_IDLE},
 		{READ_BME280, SEND_TO_PC},
 };
+
 
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -455,14 +457,15 @@ Bool check_connection(response_t *reponses, size_t reponses_size){
 void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status){
   static size_t response_count = 0;
 
-  if(check_dma_transfer_complete()){
-      response_count = get_responses(&responses);
+  if((flag_dma_rx == 1)&&(check_dma_transfer_complete())){
+	  response_count = get_responses(&responses);
+	  flag_dma_rx = 0;
   }
 
   send_tx(*state);
 
   switch(*state){
-  	  case WAITING_FOR_CONNECTION:
+  	  case TRYING_TO_CONNECT:
   		  if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
   			  *state = CONNECTED_IDLE;
   		  }
@@ -470,26 +473,26 @@ void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com
   	  case CONNECTED_IDLE:
   		  *state = assigne_task(responses, response_count);
   		  if(check_connection(responses, response_count)){
-  			*state = WAITING_FOR_CONNECTION;
+  			*state = TRYING_TO_CONNECT;
   		  }
   		  break;
   	  case SEND_TO_PC:
   		  printf("Estoy en SEND_TO_PC state\n");
   		  if(check_connection(responses, response_count)){
-  			  *state = WAITING_FOR_CONNECTION;
+  			  *state = TRYING_TO_CONNECT;
   		  }
   		  break;
   	  case READ_BME280:
   		  printf("Estoy en READ_BME280 state\n");
   		  if(check_connection(responses, response_count)){
-  			  *state = WAITING_FOR_CONNECTION;
+  			  *state = TRYING_TO_CONNECT;
   		  }
   		  break;
   }
 
 }
 
-Process_state_t state = WAITING_FOR_CONNECTION, *state_ptr = &state;
+Process_state_t state = TRYING_TO_CONNECT, *state_ptr = &state;
 //Process_state_t **state_ptr_ptr = &state_ptr; // Puntero doble que apunta a state_ptr
 
 /* USER CODE END 0 */
