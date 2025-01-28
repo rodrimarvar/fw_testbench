@@ -44,15 +44,14 @@ typedef enum {
 
 typedef enum{
 	TRYING_TO_CONNECT,
-	CONNECTED_IDLE,
+	NO_TASK,
 	SEND_TO_PC,
 	READ_BME280,
-}Process_state_t;
+}task_t;
 
 typedef enum {
 	OK,
 	CONNECT,
-	CLOSED,
 	BUSY,
 	ERR,
 	AT,
@@ -67,21 +66,20 @@ typedef enum {
 typedef struct {
         const char *keyword;
         response_t response;
-        Process_state_t state_corresponding_the_response;
+        task_t task_corresponding_the_response;
 } KeywordResponse;
 
 KeywordResponse keywords[] = {
         {"CONNECT", CONNECT, TRYING_TO_CONNECT},
-        {"CLOSED", CLOSED, CONNECTED_IDLE},
         {"OK", OK, TRYING_TO_CONNECT},
-        {"ERROR", ERR, CONNECTED_IDLE},
-        {"busy", BUSY, CONNECTED_IDLE},
-        {"AT", AT, CONNECTED_IDLE},
-		{"SEND_FROM_PC", SEND_FROM_PC, CONNECTED_IDLE},
-		{"CIPSEND_PC", CIPSEND_PC, CONNECTED_IDLE},
+        {"ERROR", ERR, NO_TASK},
+        {"busy", BUSY, NO_TASK},
+        {"AT", AT, NO_TASK},
+		{"SEND_FROM_PC", SEND_FROM_PC, TRYING_TO_CONNECT},
+		{"CIPSEND_PC", CIPSEND_PC, SEND_TO_PC},
 		{">", CIPSEND_READY, SEND_TO_PC},
 		{"CLOSED", SERVER_CLOSED, TRYING_TO_CONNECT},
-		{"READ_BME280",READ_BME280, CONNECTED_IDLE},
+		{"READ_BME280",READ_BME280, READ_BME280},
 };
 
 char comando_AT[]="AT\r\n";
@@ -93,6 +91,9 @@ char comando_AT_CWJAP[]="AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n";//Conectar 
 char comando_AT_CIPMUX[]="AT+CIPMUX=0\r\n";//Poner el ESP8266 en modo single connection
 
 char comando_AT_CIPSTART[]="AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n";//Comenzar la comunicacion TCP en la IP designada
+
+float Temperature=0, Pressure=0, Humidity=0;
+//sprintf(buffer, "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f %%\n", Temperature, Pressure, Humidity);
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
@@ -117,7 +118,7 @@ com_state_wifi_card com_wifi_card_values[] = {
 
 typedef struct {
 	const response_t response;
-	const Process_state_t next_state;
+	const task_t next_state;
 }idle_keys;
 
 idle_keys idle_transitions[] = {
@@ -127,8 +128,8 @@ idle_keys idle_transitions[] = {
 };
 
 typedef struct {
-	const Process_state_t state;
-	const Process_state_t next_state;
+	const task_t state;
+	const task_t next_state;
 }task_transitions;
 
 task_transitions task_transition[] = {
@@ -176,6 +177,7 @@ DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 #define BUFFER_SIZE 100
+#define CIPSEND_LENGTH 14
 char rx_buffer[BUFFER_SIZE];
 char rx_data[BUFFER_SIZE];
 char tx_buffer[BUFFER_SIZE];
@@ -256,23 +258,22 @@ void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     buffer[buffer_size - 1] = '\0'; // Asegura la terminación nula
 }
 
-Bool handle_wifi_card_state(response_t* reponses, size_t reponses_size, com_state_wifi_card **current_wifi_com_status){
+Bool handle_wifi_card_state(response_t reponse, com_state_wifi_card **current_wifi_com_status){
 	update_buffer(tx_buffer, BUFFER_SIZE,(*current_wifi_com_status)->command);
 
-	for(int i=0;i < reponses_size;i++){
-		if (reponses[i] == (*current_wifi_com_status)->response) {
-			for(int k=0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
-				if((*current_wifi_com_status)->next_state==com_wifi_card_values[k].state){
-					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
-					(*current_wifi_com_status) = &com_wifi_card_values[k];
+	if (reponse == (*current_wifi_com_status)->response) {
+		for(int k=0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
+			if((*current_wifi_com_status)->next_state==com_wifi_card_values[k].state){
 
-					if(((*current_wifi_com_status)->state == STATE_DISCONNECTED)){
-						memset(tx_buffer,0,BUFFER_SIZE);
-						return 1;
-					}
-					else{
-						return 0;
-					}
+				update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
+				(*current_wifi_com_status) = &com_wifi_card_values[k];
+
+				if(((*current_wifi_com_status)->state == STATE_DISCONNECTED)){
+					memset(tx_buffer,0,BUFFER_SIZE);
+					return 1;
+				}
+				else{
+					return 0;
 				}
 			}
 		}
@@ -416,21 +417,48 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
   // printf("Miliseconds when process_responses finishes: %lu ms\n", HAL_GetTick());
 }
 
-Bool send_tx(Process_state_t state){
-	if(state != CONNECTED_IDLE){
-		tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-		printf("send_tx() %s",tx_buffer);
+Bool send_tx(){
 
-		if(tx_buffer_size != -1){
-			HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-			HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-			return 1;
-		}
+	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
+	printf("send_tx() %s",tx_buffer);
+
+	if(tx_buffer_size != -1){
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		return 1;
 	}
 	return 0;
 }
 
-Process_state_t assigne_task(response_t *reponses, size_t reponses_size){
+Bool send_custom_chain(task_t task, Bool at_cipsend=0, int size=0){
+	if(task == TRYING_TO_CONNECT){// si no llega cadena es porque o enviamos cipsend o es de los comandos de conexion
+		if(at_cipsend == 1){// si es cipsend solo habria que pasar el size y el bool en 1
+
+		}
+		send_tx();
+		return 1;
+	}
+
+	switch(task){
+		case TRYING_TO_CONNECT:
+			break;
+		case READ_BME280:
+			sprintf(tx_buffet, "AT+CIPSEND=%d\r\n", size);
+			break;
+		case SEND_TO_PC:
+			sprintf(tx_buffet, "AT+CIPSEND=%d\r\n", size);
+			break;
+	}
+
+	if(size != -1){
+		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)cadena,size);
+		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+		return 1;
+	}
+	return 0;
+}
+
+task_t assigne_task(response_t *reponses, size_t reponses_size){
 	for(int i = 0;i < reponses_size;i++){
 		for (size_t k = 0; k < sizeof(idle_transitions) / sizeof(idle_keys); k++) {
 			if(idle_transitions[k].response==reponses[i]){
@@ -442,54 +470,52 @@ Process_state_t assigne_task(response_t *reponses, size_t reponses_size){
 	return CONNECTED_IDLE;
 }
 
-Bool check_connection(response_t *reponses, size_t reponses_size){
-	for(int i = 0;i < reponses_size;i++){
-		if(responses[i] == CLOSED){
-			return 1;
-		}
-	}
-	return 0;
-}
-
-void task_handler(Process_state_t *state, com_state_wifi_card** current_wifi_com_status){
-  static size_t response_count = 0;
+void task_handler(task_t *state, com_state_wifi_card** current_wifi_com_status, Bool* connected_to_server){
+  static size_t responses_count = 0;
+  static Bool cipsend_ready = 0;
+  int cipsend = 0;
 
   if(check_dma_transfer_complete()){
-	  response_count = get_responses(&responses);
+	  responses_count = get_responses(&responses);
+	  cipsend = responses_count;
   }
 
-  send_tx(*state);
-
-  switch(*state){
-  	  case TRYING_TO_CONNECT:
-  		  if(handle_wifi_card_state(responses,response_count,&(*current_wifi_com_status))){
-  			  *state = CONNECTED_IDLE;
-  		  }
-  		  break;
-  	  case CONNECTED_IDLE:
-  		  *state = assigne_task(responses, response_count);
-  		  if(check_connection(responses, response_count)){
-  			*state = TRYING_TO_CONNECT;
-  		  }
-  		  break;
-  	  case SEND_TO_PC:
-  		  printf("Estoy en SEND_TO_PC state\n");
-  		  if(check_connection(responses, response_count)){
-  			  *state = TRYING_TO_CONNECT;
-  		  }
-  		  break;
-  	  case READ_BME280:
-  		  printf("Estoy en READ_BME280 state\n");
-  		  if(check_connection(responses, response_count)){
-  			  *state = TRYING_TO_CONNECT;
-  		  }
-  		  break;
+  if(*connected_to_server == 0){
+	  send_tx();
   }
 
+  for(int i = 0;i < responses_count;i++){
+	  for(int k=0; k < (sizeof(keywords)/sizeof(KeywordResponse));k++){
+		  if(*connected_to_server == 0){
+			  *connected_to_server = handle_wifi_card_state(responses[i],&(*current_wifi_com_status));
+		  }
+		  else if(keywords[k].response == responses[i]){
+			  switch(keywords[k].task_corresponding_the_response){
+			  	  case TRYING_TO_CONNECT:
+			  		  if(responses[i] == CLOSED){
+			  			  *connected_to_server = 0;
+			  		  }
+			  		  break;;
+			  	  case SEND_TO_PC:
+
+			  		  printf("Estoy en SEND_TO_PC state\n");
+			  		  break;
+			  	  case READ_BME280:
+			  		  printf("Estoy en READ_BME280 state\n");
+			  		  break;
+			  	  case NO_TASK:
+			  		  cipsend--; //si el cipsend no es 0 enviamos el cipsend strcat
+			  		  break;
+			  }
+		  }
+	  }
+	  if(responses[i] == CLOSED){ break;}
+  }
 }
 
-Process_state_t state = TRYING_TO_CONNECT, *state_ptr = &state;
-//Process_state_t **state_ptr_ptr = &state_ptr; // Puntero doble que apunta a state_ptr
+Bool connected_to_server = 0, *connected_to_server_ptr = &connected_to_server;
+task_t state = TRYING_TO_CONNECT, *state_ptr = &state;
+//task_t **state_ptr_ptr = &state_ptr; // Puntero doble que apunta a state_ptr
 
 /* USER CODE END 0 */
 
@@ -537,15 +563,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint32_t time_communication_handling = 0;
 
-
-
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-
-  //HAL_UART_Receive_IT(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 
   strcpy(tx_buffer, comando_AT);
   /* USER CODE END 2 */
@@ -560,7 +581,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>1000)){
     	time_communication_handling = HAL_GetTick();
-    	task_handler(state_ptr, &current_wifi_com_status);
+    	task_handler(state_ptr, &current_wifi_com_status, connected_to_server_ptr);
     }
   }
   /* USER CODE END 3 */
