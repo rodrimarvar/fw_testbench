@@ -137,17 +137,6 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_DISCONNECTED, CONNECT,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",STATE_DISCONNECTED},
 };
 
-typedef struct {
-	const response_t response;
-	const task_t next_state;
-}idle_keys;
-
-idle_keys idle_transitions[] = {
-        {SERVER_CLOSED, TRYING_TO_CONNECT},
-		{READ_BME280,READ_BME280},
-};
-
-
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
 response_t* responses = NULL;
 /*********************************** Maquina de estados typedefs ****************************************/
@@ -439,6 +428,11 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
 	memset(rx_buffer, 0, BUFFER_SIZE);
 
+	if(*responses != NULL){
+		free(*responses);
+		*responses = NULL;
+	}
+
 	*responses = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
   if (*responses == NULL) {
@@ -576,6 +570,7 @@ void task_handler(com_state_wifi_card** current_wifi_com_status, Bool* connected
 }
 
 Bool connected_to_server = 0, *connected_to_server_ptr = &connected_to_server;
+Bool cwjap = 0, *cwjap_ptr = &cwjap;
 /* USER CODE END 0 */
 
 /**
