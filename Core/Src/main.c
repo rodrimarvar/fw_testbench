@@ -193,42 +193,91 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-#define BUFFER_SIZE 100
-#define CIPSEND_LENGTH 14
-char rx_buffer[BUFFER_SIZE];
-char tx_buffer[BUFFER_SIZE];
-char data_to_send[BUFFER_SIZE];
+#define BUFFER_SIZE 128
+volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
+volatile uint16_t tail = 0;
+char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
+char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
+char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
 
-int data_length = 0;
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size);
+void process_received_data(uint16_t start, uint16_t end);
+void match_and_process_response(char *line);
 
-int tx_buffer_size = 0, rx_buffer_init = 0;
+int data_length = 0; //para el largo de los datos de los sensores
 
-char **lines;
+int tx_buffer_size = 0; // para el tamaño del tx_buffer cuando enviemos el tx_buffer
+int rx_buffer_init = 0; // para ver cual es el primer caracter del rx_buffer para que al buscar datos no haya que al ver '\0' no piense que el buffer esta vacio
 
+char **lines; // donde se guardan las lineas del rx_buffer
 
-void DMA1_Stream5_IRQHandler(void)
-{
-    // Llama al manejador del HAL para procesar eventos estándar
-    HAL_DMA_IRQHandler(&hdma_usart2_rx);
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+    if (Size > 0) {
+        uint16_t prev_head = head; // Guardamos la posición inicial antes de la recepción
+        head = (head + Size) % BUFFER_SIZE; // Actualizamos la posición final del buffer
 
-    // Tu código personalizado
-    HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+        // Procesar los datos recibidos y extraer líneas
+        process_received_data(prev_head, head);
+
+        // Reiniciar recepción con DMA en modo circular
+        HAL_UARTEx_ReceiveToIdle_DMA(huart, (uint8_t*)rx_buffer, BUFFER_SIZE);
+    }
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-	if (huart->Instance == USART2){
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-		DMA1->LIFCR = DMA_HIFCR_CTCIF5 | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTEIF5;
-	}
+void process_received_data(uint16_t start, uint16_t end) {
+    char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
+    uint16_t line_index = 0; // Índice dentro del buffer temporal
+
+    while (start != end) {
+        char c = rx_buffer[start]; // Leer un carácter del buffer circular
+        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
+
+        if (c == '\n') {
+            // Si encontramos '\n', finalizamos la línea y la procesamos
+            if (line_index > 0) {
+                line[line_index] = '\0'; // Terminar la línea
+                match_and_process_response(line); // Convertir en respuesta y procesar
+                line_index = 0; // Reiniciar índice para la próxima línea
+            }
+        } else if (c != '\r') { // Ignorar '\r'
+            if (line_index < BUFFER_SIZE - 1) {
+                line[line_index++] = c;
+            }
+        }
+    }
 }
 
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-	if (huart->Instance == USART2){
-		//HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-		DMA1->LIFCR = DMA_HIFCR_CTCIF6 | DMA_HIFCR_CHTIF6 | DMA_HIFCR_CTEIF6;
+response_t match_respones(char* line){
+	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
+		if (strstr(line, keywords[k].keyword) != NULL) {
+			return keywords[k].response;
+		}
 	}
+	if (strlen(line) == 0) {
+		return EMPTY;
+	}
+	return UNKNOWN;
+}
+
+// Convierte la línea en una respuesta usando match_respones y la procesa
+void match_and_process_response(char *line) {
+    response_t response = match_respones(line); // Convertir en respuesta
+
+    // Procesar la respuesta (puedes reemplazarlo con tu lógica)
+    switch (response) {
+        case OK:
+            printf("Recibido OK\n");
+            break;
+        case EMPTY:
+            printf("Recibido EMPTY\n");
+            break;
+        case UNKNOWN:
+            printf("Recibido UNKNOWN: %s\n", line);
+            break;
+        default:
+            printf("Recibido otro comando\n");
+            break;
+    }
 }
 
 Bool check_dma_transfer_complete(void) {
@@ -263,38 +312,6 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-size_t calculate_final_length(const char *format, float temperature, float pressure, float humidity) {
-    size_t constant_length = 0; // Longitud de la cadena constante
-    size_t float_length = 0;    // Longitud total estimada de los floats
-
-    // Recorrer el formato para calcular la longitud de la cadena constante
-    for (const char *p = format; *p != '\0'; p++) {
-        if (*p == '%' && *(p + 1) == '.') {
-            // Encontramos un marcador de formato (%.2f)
-            p += 2; // Saltar "%."
-            while (*p >= '0' && *p <= '9') {
-                p++; // Saltar precisión (ej. "2" en %.2f)
-            }
-            if (*p == 'f') {
-                // Agregar longitud estimada para un float
-                float_length += 1 +  // Signo (puede ser + o -)
-                                (temperature < 1 && temperature > -1 ? 1 : (size_t)log10(fabs(temperature)) + 1) +
-                                1 +  // Punto decimal
-                                2;   // Precisión (%.2f -> 2 dígitos)
-            }
-        } else {
-            // Contar los caracteres constantes
-            constant_length++;
-        }
-    }
-
-    // Repetir el cálculo del float para las otras variables
-    float_length += 1 + (pressure < 1 && pressure > -1 ? 1 : (size_t)log10(fabs(pressure)) + 1) + 1 + 2;
-    float_length += 1 + (humidity < 1 && humidity > -1 ? 1 : (size_t)log10(fabs(humidity)) + 1) + 1 + 2;
-
-    // Longitud total
-    return constant_length + float_length;
-}
 
 void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     if (strcmp(buffer, new_content) == 0) {
@@ -420,18 +437,6 @@ void copy_from_first_non_null(char *dest, const char *src, int size)
     dest[j] = '\0';
 }
 
-response_t match_respones(char* line){
-	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-		if (strstr(line, keywords[k].keyword) != NULL) {
-			return keywords[k].response;
-		}
-	}
-	if (strlen(line) == 0) {
-		return EMPTY;
-	}
-	return UNKNOWN;
-}
-
 size_t get_responses(response_t **responses) // time duration, between 1 and 2 milisecond
 {
 	int number_of_lines_in_response = 0;
@@ -447,7 +452,7 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
 
 	//hacemos lineas de la cadena
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
-	memset(rx_buffer, 0, BUFFER_SIZE);
+	//memset(rx_buffer, 0, BUFFER_SIZE);
 
 	*responses = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
@@ -473,7 +478,6 @@ Bool send_tx(){
 
 	if(tx_buffer_size != -1){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
@@ -649,6 +653,12 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
   strcpy(tx_buffer, comando_AT);
+
+  HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+
+  //HAL_UARTEx_RxEventCallback(huart2, Size);
+
+  //HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */

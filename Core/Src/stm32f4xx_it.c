@@ -204,7 +204,7 @@ void SysTick_Handler(void)
 /**
   * @brief This function handles DMA1 stream5 global interrupt.
   */
-__weak void DMA1_Stream5_IRQHandler(void)
+void DMA1_Stream5_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA1_Stream5_IRQn 0 */
 
