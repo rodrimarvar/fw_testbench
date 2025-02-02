@@ -37,12 +37,16 @@ typedef enum {
 	STATE_CHECKING_COM,
     STATE_SETTING_CWMODE,
     STATE_TRYING_WIFI_CONEXION,
-    STATE_WIFI_FAIL,
+
 	STATE_WIFI_CONNECTED,
 	STATE_CONNECTING_TO_SERVER,
+	STATE_CONNECTED_TO_SERVER,
+
+    STATE_WIFI_FAIL,
 	STATE_CREATE_OWN_WIFI,
 	STATE_CREAT_SERVER,
 	STATE_CHECKING_CLIENTS,
+	STATE_CLIENT_CONNECTED
 }Conection_State_t;
 
 typedef enum{
@@ -134,7 +138,7 @@ response_t *response_array;
 typedef struct {
         const Conection_State_t state;
         const response_t *response;
-        size_t num_responses;
+        int num_responses;
         const char command[50];
         const Conection_State_t *next_state;
 } com_state_wifi_card;
@@ -144,11 +148,13 @@ com_state_wifi_card com_wifi_card_values[] = {
         {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=3\r\n",(Conection_State_t[]){STATE_TRYING_WIFI_CONEXION}},
         {STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
         {STATE_WIFI_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
+		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED_TO_SERVER}},
+		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
 		{STATE_WIFI_FAIL, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
 		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
-		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
 		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
-        {STATE_CHECKING_CLIENTS, (response_t[]){CIPSTATE}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
+        {STATE_CHECKING_CLIENTS, (response_t[]){CONNECT}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CLIENT_CONNECTED}},
+		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -303,25 +309,25 @@ void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
 
 Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_wifi_com_status){
 	update_buffer(tx_buffer, BUFFER_SIZE,(*current_wifi_com_status)->command);
-
 	for(size_t i = 0;i < (*current_wifi_com_status)->num_responses;i++){
+		Bool match = 0;
 		if((*current_wifi_com_status)->response[i] == response){
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
-
+					match=1;
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
-
-					if(((*current_wifi_com_status)->state == STATE_CONNECTING_TO_SERVER)||(((*current_wifi_com_status)->state == STATE_CHECKING_CLIENTS))){
-						memset(tx_buffer,0,BUFFER_SIZE);
-						return 1;
-					}
-					else{
-						return 0;
-					}
+					break;
 				}
 			}
 		}
+		if(match){
+			break;
+		}
+	}
+	if(((*current_wifi_com_status)->state == STATE_CONNECTED_TO_SERVER)||(((*current_wifi_com_status)->state == STATE_CLIENT_CONNECTED))){
+		memset(tx_buffer,0,BUFFER_SIZE);
+		return 1;
 	}
 	return 0;
 }
@@ -443,11 +449,6 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
 	lines = split_lines(&rx_buffer[rx_buffer_init], &number_of_lines_in_response);
 	memset(rx_buffer, 0, BUFFER_SIZE);
 
-	if(*responses != NULL){
-		free(*responses);
-		*responses = NULL;
-	}
-
 	*responses = (response_t *)malloc(number_of_lines_in_response * sizeof(response_t));
 
   if (*responses == NULL) {
@@ -462,14 +463,13 @@ size_t get_responses(response_t **responses) // time duration, between 1 and 2 m
     }
   }
   free(lines);
-  printf("Miliseconds when get_responses finishes: %lu ms\n", HAL_GetTick());
   return number_of_lines_in_response;
 }
 
 Bool send_tx(){
 
 	tx_buffer_size = find_null_position(tx_buffer, BUFFER_SIZE);
-	//printf("send_tx() %s",tx_buffer);
+	printf("send_tx() %s",tx_buffer);
 
 	if(tx_buffer_size != -1){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
@@ -517,10 +517,10 @@ Bool assign_tx_buffer(task_response *tasks_with_response, size_t tasks_size){ //
 			case TRYING_TO_CONNECT:
 				break;
 			case READ_BME280:
-				sprintf(aux,"Temp 0 C, Press 0 Pa, Hum 0");
+				sprintf(aux,"TeTeTe");
 				if(data_length + strlen(aux)<99){
 					strcat(data_to_send, aux);
-					printf("%sCon largo: %d",data_to_send, strlen(data_to_send));
+					//printf("%s\nCon largo: %d\n",data_to_send, strlen(data_to_send));
 				}
 				break;
 			case NO_TASK:
@@ -533,10 +533,10 @@ Bool assign_tx_buffer(task_response *tasks_with_response, size_t tasks_size){ //
 	}
 	if(strlen(data_to_send)>0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
-		if((*current_wifi_com_status).state == STATE_CHECKING_CLIENTS){
+		if((*current_wifi_com_status).state == STATE_CLIENT_CONNECTED){
 			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n", strlen(data_to_send));
 		}
-		if((*current_wifi_com_status).state == STATE_CONNECTING_TO_SERVER){
+		if((*current_wifi_com_status).state == STATE_CONNECTED_TO_SERVER){
 			sprintf(tx_buffer,"AT+CIPSEND=%d\r\n", strlen(data_to_send));
 		}
 		send_tx();
@@ -556,6 +556,10 @@ void task_handler(com_state_wifi_card** current_wifi_com_status, Bool* connected
 
 	if (responses_count > 0) {
 		assigne_tasks(responses, responses_count,&tasks_with_response);
+		if(responses != NULL){
+			free(responses);
+			responses = NULL;
+		}
 	}
 
 	if(*connected_to_server == 0){
@@ -576,7 +580,7 @@ void task_handler(com_state_wifi_card** current_wifi_com_status, Bool* connected
 
 				break;
 			case CIPSEND_TASK:
-				//printf("data_to_send = %s", data_to_send);
+				printf("data_to_send = %s\n", data_to_send);
 				HAL_UART_Transmit_DMA(&huart2,(uint8_t *)data_to_send, strlen(data_to_send));
 				break;
 		}
@@ -657,9 +661,9 @@ int main(void)
     /* USER CODE BEGIN 3 */
     if((HAL_GetTick()-time_communication_handling>500)){
     	time_communication_handling = HAL_GetTick();
-    	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
+    	printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
     	task_handler(&current_wifi_com_status, connected_to_server_ptr);
-    	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
+    	printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
     }
   }
   /* USER CODE END 3 */
