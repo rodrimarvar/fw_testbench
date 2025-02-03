@@ -196,6 +196,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 #define BUFFER_SIZE 128
 volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
 volatile uint16_t tail = 0;
+volatile Bool flag_receive = 0;
+response_t response_global;
 char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
@@ -218,33 +220,14 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
         // Procesar los datos recibidos y extraer líneas
         process_received_data(prev_head, head);
-
-        // Reiniciar recepción con DMA en modo circular
-        HAL_UARTEx_ReceiveToIdle_DMA(huart, (uint8_t*)rx_buffer, BUFFER_SIZE);
+        flag_receive = 1;
     }
 }
 
-void process_received_data(uint16_t start, uint16_t end) {
-    char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
-    uint16_t line_index = 0; // Índice dentro del buffer temporal
-
-    while (start != end) {
-        char c = rx_buffer[start]; // Leer un carácter del buffer circular
-        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
-
-        if (c == '\n') {
-            // Si encontramos '\n', finalizamos la línea y la procesamos
-            if (line_index > 0) {
-                line[line_index] = '\0'; // Terminar la línea
-                match_and_process_response(line); // Convertir en respuesta y procesar
-                line_index = 0; // Reiniciar índice para la próxima línea
-            }
-        } else if (c != '\r') { // Ignorar '\r'
-            if (line_index < BUFFER_SIZE - 1) {
-                line[line_index++] = c;
-            }
-        }
-    }
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
+	if(huart->Instance == USART2){
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	}
 }
 
 response_t match_respones(char* line){
@@ -259,26 +242,31 @@ response_t match_respones(char* line){
 	return UNKNOWN;
 }
 
-// Convierte la línea en una respuesta usando match_respones y la procesa
-void match_and_process_response(char *line) {
-    response_t response = match_respones(line); // Convertir en respuesta
+void process_received_data(uint16_t start, uint16_t end) {
+    char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
+    uint16_t line_index = 0; // Índice dentro del buffer temporal
 
-    // Procesar la respuesta (puedes reemplazarlo con tu lógica)
-    switch (response) {
-        case OK:
-            printf("Recibido OK\n");
-            break;
-        case EMPTY:
-            printf("Recibido EMPTY\n");
-            break;
-        case UNKNOWN:
-            printf("Recibido UNKNOWN: %s\n", line);
-            break;
-        default:
-            printf("Recibido otro comando\n");
-            break;
+    while (start != end) {
+        char c = rx_buffer[start]; // Leer un carácter del buffer circular
+        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
+
+        if (c == '\n') {
+            // Si encontramos '\n', finalizamos la línea y la procesamos
+            if (line_index > 0) {
+                line[line_index] = '\0'; // Terminar la línea
+                response_global = match_respones(line); // Convertir en respuesta y procesar
+                line_index = 0; // Reiniciar índice para la próxima línea
+            }
+        } else if (c != '\r') { // Ignorar '\r'
+            if (line_index < BUFFER_SIZE - 1) {
+                line[line_index++] = c;
+            }
+        }
     }
 }
+
+// Convierte la línea en una respuesta usando match_respones y la procesa
+
 
 Bool check_dma_transfer_complete(void) {
     if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
@@ -312,7 +300,6 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     if (strcmp(buffer, new_content) == 0) {
         return; // Si son iguales, no hace nada
@@ -478,6 +465,7 @@ Bool send_tx(){
 
 	if(tx_buffer_size != -1){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
@@ -654,11 +642,11 @@ int main(void)
 
   strcpy(tx_buffer, comando_AT);
 
-  HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
+  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
 
   //HAL_UARTEx_RxEventCallback(huart2, Size);
 
-  //HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -669,11 +657,29 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((HAL_GetTick()-time_communication_handling>500)){
+    if((HAL_GetTick()-time_communication_handling>1500)){
     	time_communication_handling = HAL_GetTick();
-    	printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
-    	task_handler(&current_wifi_com_status, connected_to_server_ptr);
-    	printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
+    	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
+    	//task_handler(&current_wifi_com_status, connected_to_server_ptr);
+    	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
+    	send_tx();
+    }
+    if(flag_receive == 1){
+    	switch (response_global) {
+    	case OK:
+    		printf("Recibido OK\n");
+    		break;
+    	case EMPTY:
+    		printf("Recibido EMPTY\n");
+    		break;
+    	case UNKNOWN:
+    		printf("Recibido UNKNOWN\n");
+    		break;
+    	default:
+    		printf("Recibido otro comando\n");
+    		break;
+    	}
+    	flag_receive = 0;
     }
   }
   /* USER CODE END 3 */
