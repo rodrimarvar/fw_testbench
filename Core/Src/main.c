@@ -196,17 +196,25 @@ DMA_HandleTypeDef hdma_usart2_tx;
 #define BUFFER_SIZE 64
 volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
 volatile uint16_t tail = 0;
+
 volatile Bool flag_receive = 0;
+
 response_t response_global;
+
 char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
 volatile Bool flag_tx_not_ok = 0;
 uint32_t time_tx = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
 
+char message_buffer[2 * BUFFER_SIZE]; // Buffer para almacenar un mensaje completo
+uint16_t overflow_start = 0;  // Posición del buffer antes del desbordamiento
+Bool buffer_overflow = 0;  // Bandera de desbordamiento
+
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size);
-void process_received_data(uint16_t start, uint16_t end);
-void match_and_process_response(char *line);
+//void process_received_data(uint16_t start, uint16_t end);
+void copy_and_process_message(uint16_t start, uint16_t end);
+void process_message_lines(char *message);
 
 int data_length = 0; //para el largo de los datos de los sensores
 
@@ -217,13 +225,30 @@ char **lines; // donde se guardan las lineas del rx_buffer
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     if (Size > 0) {
-        uint16_t prev_head = head; // Guardamos la posición inicial antes de la recepción
-        head = (head + Size) % BUFFER_SIZE; // Actualizamos la posición final del buffer
+        uint16_t prev_head = head;
+        head = (head + Size) % BUFFER_SIZE;  // Mover `head` en el buffer circular
 
-        // Procesar los datos recibidos y extraer líneas
-        process_received_data(prev_head, head);
-        flag_receive = 1;
+        // 🚨 Detectar desbordamiento antes de procesar
+        if (head == tail) {
+            buffer_overflow = 1;
+            overflow_start = prev_head;  // Guardar la posición antes del desbordamiento
+            //printf("⚠️ Buffer lleno, esperando nueva recepción antes de procesar.\n");
+        }
+        else {
+            if (buffer_overflow) {
+                // Si hubo desbordamiento, ahora procesamos desde `overflow_start`
+                //printf("✅ Procesando datos guardados tras desbordamiento.\n");
+                copy_and_process_message(overflow_start, head);
+                buffer_overflow = 0;  // Resetear la bandera de desbordamiento
+            } else {
+                // Procesar datos normalmente
+                copy_and_process_message(prev_head, head);
+            }
+        }
     }
+
+    // 🚀 Reiniciar la recepción UART en DMA
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
@@ -233,10 +258,28 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	}
 }
 
+void copy_and_process_message(uint16_t start, uint16_t end) {
+    uint16_t index = 0;
+
+    // Copiar datos desde el buffer circular al `message_buffer`
+    while (start != end) {
+        message_buffer[index++] = rx_buffer[start];
+        start = (start + 1) % BUFFER_SIZE;
+        if (index >= sizeof(message_buffer) - 1) break; // Prevenir desbordamiento del buffer temporal
+    }
+    message_buffer[index] = '\0';  // Finalizar la cadena
+
+    //printf("📩 Mensaje copiado: %s\n", message_buffer); // Debugging
+    process_message_lines(message_buffer);  // Procesar el mensaje línea por línea
+}
+
 response_t match_respones(char* line){
 	printf("%s\n", line);
 	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
 		if (strstr(line, keywords[k].keyword) != NULL) {
+			if(keywords[k].response == SERVER_CLOSED){
+				printf("Ha llegado closed a match_response\n");
+			}
 			return keywords[k].response;
 		}
 	}
@@ -601,45 +644,16 @@ void task_handling(response_t response){
 	}
 }
 
-void process_received_data(uint16_t start, uint16_t end) {
-    static char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
-    static uint16_t line_index = 0; // Índice dentro del buffer temporal
+void process_message_lines(char *message) {
+    char *line = strtok(message, "\n");  // Dividir mensaje en líneas
 
-    while (start != end) {
-        char c = rx_buffer[start]; // Leer un carácter del buffer circular
-        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
-
-        // Si encontramos '\n', procesamos el mensaje acumulado
-        if (c == '\n') {
-            if (line_index > 0) {
-                line[line_index] = '\0'; // Terminar la línea
-                response_global = match_respones(line); // Convertir en respuesta y procesar
-                task_handling(response_global);
-                line_index = 0; // Reiniciar índice para la próxima línea
-            }
-        }
-        // Si el buffer circular está a punto de llenarse, procesamos el mensaje parcial
-        else if (line_index >= BUFFER_SIZE - 1) {
-            line[line_index] = '\0'; // Terminar el mensaje
-            response_global = match_respones(line);
-            task_handling(response_global);
-            line_index = 0; // Reiniciar índice
-        }
-        // Almacenar el carácter solo si no es '\r' (opcional, si queremos ignorarlo)
-        else if (c != '\r') {
-            line[line_index++] = c;
-        }
-    }
-
-    // 🚀 Si hemos recibido datos pero no hemos encontrado '\n', procesamos lo que haya
-    if (line_index > 0) {
-        line[line_index] = '\0'; // Terminar el mensaje
-        response_global = match_respones(line);
-        task_handling(response_global);
-        line_index = 0; // Reiniciar buffer
+    while (line != NULL) {
+        response_t response = match_respones(line);  // Convertir en respuesta
+        task_handling(response);
+        //printf("✅ Procesada línea: %s\n", line);  // Debugging
+        line = strtok(NULL, "\n");  // Obtener siguiente línea
     }
 }
-
 /* USER CODE END 0 */
 
 /**
