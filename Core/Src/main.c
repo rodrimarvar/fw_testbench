@@ -200,6 +200,8 @@ volatile Bool flag_receive = 0;
 response_t response_global;
 char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
+volatile Bool flag_tx_not_ok = 0;
+uint32_t time_tx = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size);
@@ -226,6 +228,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if(huart->Instance == USART2){
+		flag_tx_not_ok = 0;
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
 }
@@ -264,9 +267,6 @@ void process_received_data(uint16_t start, uint16_t end) {
         }
     }
 }
-
-// Convierte la línea en una respuesta usando match_respones y la procesa
-
 
 Bool check_dma_transfer_complete(void) {
     if (__HAL_DMA_GET_FLAG(huart2.hdmarx, DMA_FLAG_TCIF1_5) == RESET) {
@@ -465,7 +465,9 @@ Bool send_tx(){
 
 	if(tx_buffer_size != -1){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+		time_tx = HAL_GetTick();
+		flag_tx_not_ok = 1;
+		//HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
@@ -657,6 +659,10 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
+    if((flag_tx_not_ok == 1)&&(HAL_GetTick()-time_tx>1500)){ //si no se han enviado los datos correctamente se vuelven a enviar
+    	send_tx();
+    }
+
     if((HAL_GetTick()-time_communication_handling>1500)){
     	time_communication_handling = HAL_GetTick();
     	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
