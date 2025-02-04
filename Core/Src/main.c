@@ -146,7 +146,7 @@ typedef struct {
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"AT\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
         {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=3\r\n",(Conection_State_t[]){STATE_TRYING_WIFI_CONEXION}},
-        {STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
+        {STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
         {STATE_WIFI_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
 		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED_TO_SERVER}},
 		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
@@ -193,7 +193,7 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 64
 volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
 volatile uint16_t tail = 0;
 volatile Bool flag_receive = 0;
@@ -234,6 +234,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 }
 
 response_t match_respones(char* line){
+	printf("%s\n", line);
 	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
 		if (strstr(line, keywords[k].keyword) != NULL) {
 			return keywords[k].response;
@@ -243,29 +244,6 @@ response_t match_respones(char* line){
 		return EMPTY;
 	}
 	return UNKNOWN;
-}
-
-void process_received_data(uint16_t start, uint16_t end) {
-    char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
-    uint16_t line_index = 0; // Índice dentro del buffer temporal
-
-    while (start != end) {
-        char c = rx_buffer[start]; // Leer un carácter del buffer circular
-        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
-
-        if (c == '\n') {
-            // Si encontramos '\n', finalizamos la línea y la procesamos
-            if (line_index > 0) {
-                line[line_index] = '\0'; // Terminar la línea
-                response_global = match_respones(line); // Convertir en respuesta y procesar
-                line_index = 0; // Reiniciar índice para la próxima línea
-            }
-        } else if (c != '\r') { // Ignorar '\r'
-            if (line_index < BUFFER_SIZE - 1) {
-                line[line_index++] = c;
-            }
-        }
-    }
 }
 
 Bool check_dma_transfer_complete(void) {
@@ -591,6 +569,77 @@ void task_handler(com_state_wifi_card** current_wifi_com_status, Bool* connected
 
 Bool connected_to_server = 0, *connected_to_server_ptr = &connected_to_server;
 Bool cwjap = 0, *cwjap_ptr = &cwjap;
+
+void task_handling(response_t response){
+	task_t task;
+	for (size_t k = 0; k < sizeof(key_for_tasks) / sizeof(task_response); k++) {
+		if (key_for_tasks[k].response == response) {
+			task = key_for_tasks[k].task; // Copiar la estructura completa
+			break; // Salir del bucle interno si se encuentra una coincidencia
+		}
+	}
+
+	switch(task){
+		case TRYING_TO_CONNECT:
+			if(connected_to_server == 0){
+				if(response == SERVER_CLOSED){
+					printf("Ha llegado closed a task_handling\n");
+				}
+				connected_to_server = handle_wifi_card_state(response, &current_wifi_com_status);
+			}
+			break;
+		case READ_BME280:
+			printf("Estoy en READ_BME280 state\n");
+			break;
+		case NO_TASK:
+
+			break;
+		case CIPSEND_TASK:
+			printf("data_to_send = %s\n", data_to_send);
+			HAL_UART_Transmit_DMA(&huart2,(uint8_t *)data_to_send, strlen(data_to_send));
+			break;
+	}
+}
+
+void process_received_data(uint16_t start, uint16_t end) {
+    static char line[BUFFER_SIZE];  // Buffer temporal para almacenar una línea
+    static uint16_t line_index = 0; // Índice dentro del buffer temporal
+
+    while (start != end) {
+        char c = rx_buffer[start]; // Leer un carácter del buffer circular
+        start = (start + 1) % BUFFER_SIZE; // Avanzar en el buffer circular
+
+        // Si encontramos '\n', procesamos el mensaje acumulado
+        if (c == '\n') {
+            if (line_index > 0) {
+                line[line_index] = '\0'; // Terminar la línea
+                response_global = match_respones(line); // Convertir en respuesta y procesar
+                task_handling(response_global);
+                line_index = 0; // Reiniciar índice para la próxima línea
+            }
+        }
+        // Si el buffer circular está a punto de llenarse, procesamos el mensaje parcial
+        else if (line_index >= BUFFER_SIZE - 1) {
+            line[line_index] = '\0'; // Terminar el mensaje
+            response_global = match_respones(line);
+            task_handling(response_global);
+            line_index = 0; // Reiniciar índice
+        }
+        // Almacenar el carácter solo si no es '\r' (opcional, si queremos ignorarlo)
+        else if (c != '\r') {
+            line[line_index++] = c;
+        }
+    }
+
+    // 🚀 Si hemos recibido datos pero no hemos encontrado '\n', procesamos lo que haya
+    if (line_index > 0) {
+        line[line_index] = '\0'; // Terminar el mensaje
+        response_global = match_respones(line);
+        task_handling(response_global);
+        line_index = 0; // Reiniciar buffer
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -635,7 +684,7 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  uint32_t time_communication_handling = 0;
+  //uint32_t time_communication_handling = 0;
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
@@ -659,11 +708,11 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if((flag_tx_not_ok == 1)&&(HAL_GetTick()-time_tx>1500)){ //si no se han enviado los datos correctamente se vuelven a enviar
+    if(((flag_tx_not_ok == 1)||(connected_to_server == 0))&&(HAL_GetTick()-time_tx>1500)){ //si no se han enviado los datos correctamente se vuelven a enviar
     	send_tx();
     }
 
-    if((HAL_GetTick()-time_communication_handling>1500)){
+    /*if((HAL_GetTick()-time_communication_handling>1500)){
     	time_communication_handling = HAL_GetTick();
     	//printf("Miliseconds when task_handler finishes: %lu ms\n", HAL_GetTick());
     	//task_handler(&current_wifi_com_status, connected_to_server_ptr);
@@ -671,6 +720,7 @@ int main(void)
     	send_tx();
     }
     if(flag_receive == 1){
+
     	switch (response_global) {
     	case OK:
     		printf("Recibido OK\n");
@@ -686,7 +736,7 @@ int main(void)
     		break;
     	}
     	flag_receive = 0;
-    }
+    }*/
   }
   /* USER CODE END 3 */
 }
