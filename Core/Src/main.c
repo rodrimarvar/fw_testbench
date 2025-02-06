@@ -148,7 +148,7 @@ typedef struct {
 
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
-        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=3\r\n",(Conection_State_t[]){STATE_CWSTARTSMART}},
+        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=1\r\n",(Conection_State_t[]){STATE_CWSTARTSMART}},
 		{STATE_CWSTARTSMART, (response_t[]){OK}, 1,"AT+CWSTARTSMART=1\r\n",(Conection_State_t[]){STATE_CWSTOPSMART}},
 		{STATE_CWSTOPSMART, (response_t[]){OK}, 1,"AT+CWSTOPSMART\r\n",(Conection_State_t[]){STATE_CHECKWIFI}},
 		{STATE_CHECKWIFI, (response_t[]){OK}, 1,"AT+CWSAP?\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED}},
@@ -258,7 +258,7 @@ void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
     // Copiar datos desde el buffer circular al `message_buffer`
     while (start != end) {
         message_buffer[index++] = rx_buffer[start];
-        //printf("%c %d\n", rx_buffer[start], start);
+        printf("%c %d\n", rx_buffer[start], start);
         start = (start + 1) % BUFFER_SIZE;
         if (index >= sizeof(message_buffer) - 1) break; // Prevenir desbordamiento del buffer temporal
     }
@@ -342,6 +342,9 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 					match=1;
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
+					if((*current_wifi_com_status)->state == STATE_CWSTARTSMART){
+						HAL_Delay(120000); //tiempo para conectar el esp al wifi con el touch
+					}
 					break;
 				}
 			}
@@ -437,6 +440,31 @@ void process_message_lines(char *message) {
         line = strtok(NULL, "\n");  // Obtener siguiente línea
     }
 }
+
+void init_congif(){
+	  strcpy(tx_buffer, "ATE0\r\n");
+	  send_tx();
+
+	  HAL_Delay(1000);
+	  strcpy(tx_buffer, "+"); // exit passthrough mode
+	  send_tx();
+	  HAL_Delay(2);
+	  send_tx();
+	  HAL_Delay(2);
+	  send_tx();
+
+	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	  HAL_Delay(1000);
+
+
+	  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n");
+	  send_tx();
+	  HAL_Delay(100);
+	  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n");
+	  send_tx();
+	  strcpy(tx_buffer, "AT+CWQAP\r\n");
+	  send_tx();
+}
 /* USER CODE END 0 */
 
 /**
@@ -481,30 +509,12 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  //uint32_t time_communication_handling = 0;
-
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-  HAL_Delay(1000);
-
-  strcpy(tx_buffer, "+"); // exit passthrough mode
-  send_tx();
-  HAL_Delay(2);
-  send_tx();
-  HAL_Delay(2);
-  send_tx();
-
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
-  HAL_Delay(1000);
-
-  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n");
-  send_tx();
-  HAL_Delay(100);
-  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n");
-  send_tx();
+  init_congif();
   /* USER CODE END 2 */
 
   /* Infinite loop */
