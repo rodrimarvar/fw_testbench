@@ -37,6 +37,9 @@ typedef enum {
 	STATE_CHECKING_COM,
     STATE_SETTING_CWMODE,
     STATE_TRYING_WIFI_CONEXION,
+	STATE_CWSTARTSMART,
+	STATE_CWSTOPSMART,
+	STATE_CHECKWIFI,
 
 	STATE_WIFI_CONNECTED,
 	STATE_CONNECTING_TO_SERVER,
@@ -145,11 +148,14 @@ typedef struct {
 
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
-        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=3\r\n",(Conection_State_t[]){STATE_TRYING_WIFI_CONEXION}},
-        {STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
+        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=3\r\n",(Conection_State_t[]){STATE_CWSTARTSMART}},
+		{STATE_CWSTARTSMART, (response_t[]){OK}, 1,"AT+CWSTARTSMART=1\r\n",(Conection_State_t[]){STATE_CWSTOPSMART}},
+		{STATE_CWSTOPSMART, (response_t[]){OK}, 1,"AT+CWSTOPSMART\r\n",(Conection_State_t[]){STATE_CHECKWIFI}},
+		{STATE_CHECKWIFI, (response_t[]){OK}, 1,"AT+CWSAP?\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED}},
+        //{STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
         {STATE_WIFI_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
 		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED_TO_SERVER}},
-		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
+		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
 		{STATE_WIFI_FAIL, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
 		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
 		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
@@ -482,13 +488,22 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-  strcpy(tx_buffer, "ATE0\r\n");
+  HAL_Delay(1000);
 
-  //HAL_UART_Receive_DMA(&huart2,(uint8_t *)rx_buffer,BUFFER_SIZE);
-
-  //HAL_UARTEx_RxEventCallback(huart2, Size);
+  strcpy(tx_buffer, "+"); // exit passthrough mode
+  send_tx();
+  HAL_Delay(2);
+  send_tx();
+  HAL_Delay(2);
+  send_tx();
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+  HAL_Delay(1000);
+
+  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n");
+  send_tx();
+  HAL_Delay(100);
+  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n");
   send_tx();
   /* USER CODE END 2 */
 
@@ -503,7 +518,7 @@ int main(void)
     if(((flag_tx_not_ok == 1)||(connected_to_server == 0))&&(HAL_GetTick()-time_tx>20000)){ //si no se han enviado los datos correctamente se vuelven a enviar
     	send_tx();
     }
-    if(flag_send_tx == 1){
+    if(flag_send_tx == 1){ // si desde la callback nos avisan enviamos
     	send_tx();
     	flag_send_tx = 0;
     }
