@@ -193,9 +193,9 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-#define BUFFER_SIZE 64
+#define BUFFER_SIZE 128
 volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
-volatile uint16_t prev_head = 0;
+//const uint16_t buffer_size = BUFFER_SIZE;
 
 volatile Bool flag_receive = 0;
 
@@ -203,7 +203,7 @@ response_t response_global;
 
 volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
-volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0, flag_override = 0;
+volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0;
 uint32_t time_tx = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
 
@@ -211,19 +211,17 @@ char message_buffer[BUFFER_SIZE]; // Buffer para almacenar un mensaje completo
 uint16_t overflow_start = 0;  // Posición del buffer antes del desbordamiento
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size);
-//void process_received_data(uint16_t start, uint16_t end);
 void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow);
 void process_message_lines(char *message);
 
 int data_length = 0; //para el largo de los datos de los sensores
 
-int tx_buffer_size = 0; // para el tamaño del tx_buffer cuando enviemos el tx_buffer
-//int rx_buffer_init = 0; // para ver cual es el primer caracter del rx_buffer para que al buscar datos no haya que al ver '\0' no piense que el buffer esta vacio
+int tx_buffer_size = 0;
 
 char **lines; // donde se guardan las lineas del rx_buffer
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-	if(Size == 64){
+	if(Size == 128){ // Poner el tamaño del buffer a mano
 		overflow_start = head;
 	}
 
