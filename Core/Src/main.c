@@ -201,9 +201,9 @@ volatile Bool flag_receive = 0;
 
 response_t response_global;
 
-char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
+volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
-volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0, failed_message = 0;
+volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0, flag_override = 0;
 uint32_t time_tx = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
 
@@ -223,13 +223,16 @@ int tx_buffer_size = 0; // para el tamaño del tx_buffer cuando enviemos el tx_b
 char **lines; // donde se guardan las lineas del rx_buffer
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
-	if(Size == BUFFER_SIZE){
-		overflow_start = head;  // Guardar la posición antes del desbordamiento
-		copy_and_process_message(overflow_start, BUFFER_SIZE, 1);
-		head = 0;
+	if(Size == 64){
+		overflow_start = head;
 	}
 
     if (Size > 0) {
+    	if(overflow_start > Size){
+    		//printf("overflow start %d\n", overflow_start);
+    		copy_and_process_message(overflow_start, BUFFER_SIZE, 1);
+    		head = 0;
+    	}
         copy_and_process_message(head, Size, 0);
     }
     head = Size;
@@ -246,28 +249,23 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 
 void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
     uint16_t index = 0;
-    if(failed_message == 1){
-    	start = prev_head;
-    	failed_message = 0;
-    }
+    static int count = 0;
 
     // Copiar datos desde el buffer circular al `message_buffer`
     while (start != end) {
         message_buffer[index++] = rx_buffer[start];
-        printf("%c", rx_buffer[start]);
+        //printf("%c %d\n", rx_buffer[start], start);
         start = (start + 1) % BUFFER_SIZE;
         if (index >= sizeof(message_buffer) - 1) break; // Prevenir desbordamiento del buffer temporal
     }
-    printf("\n");
-    if((overflow == 0)&&(strstr(message_buffer,"\n")!=NULL)){
+
+    if(overflow == 0){
+    	count++;
+    	//printf("\nterminado %d\n", count);
     	message_buffer[index] = '\0';  // Finalizar la cadena
     	process_message_lines(message_buffer); // Procesar el mensaje línea por línea
     	memset(message_buffer, 0, BUFFER_SIZE);
     	flag_send_tx = 1;
-    }
-    else{
-    	failed_message = 1;
-    	prev_head = start;
     }
 }
 
