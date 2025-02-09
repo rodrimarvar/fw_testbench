@@ -218,7 +218,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if(Size == 128){ // Poner el tamaño del buffer a mano
 		overflow_start = head;
 	}
-	printf("Hola mundo\n");
+	printf("Hola mundo EventRX\n");
     if (Size > 0) {
     	if(overflow_start > Size){
     		//printf("overflow start %d\n", overflow_start);
@@ -235,6 +235,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if(huart->Instance == USART2){
 		flag_tx_not_ok = 0;
+		printf("Hola mundo TX\n");
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
 }
@@ -303,7 +304,7 @@ Bool send_tx(){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
 		time_tx = HAL_GetTick();
 		flag_tx_not_ok = 1;
-		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+		//HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
@@ -438,19 +439,16 @@ void process_message_lines(char *message) {
 void init_congif(){
 	  strcpy(tx_buffer, "ATE0\r\n");
 	  send_tx();
-
-	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
-	  HAL_Delay(1000);
-
-
+	  //HAL_Delay(100);
 	  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n");
 	  send_tx();
-	  HAL_Delay(100);
+	  //HAL_Delay(100);
 	  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n");
 	  send_tx();
+	  //HAL_Delay(100);
 	  strcpy(tx_buffer, "AT+CWQAP\r\n");
 	  send_tx();
-	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	  //HAL_Delay(100);
 }
 /* USER CODE END 0 */
 
@@ -501,9 +499,12 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-  init_congif();
+  //init_congif();
 
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+  //HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+  strcpy(tx_buffer, "ATE1\r\n");
+  send_tx();
+  //HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
