@@ -36,20 +36,13 @@
 typedef enum {
 	STATE_CHECKING_COM,
     STATE_SETTING_CWMODE,
-    STATE_TRYING_WIFI_CONEXION,
-	STATE_CWSTARTSMART,
-	STATE_CWSTOPSMART,
-	STATE_CHECKWIFI,
-
-	STATE_WIFI_CONNECTED,
-	STATE_CONNECTING_TO_SERVER,
-	STATE_CONNECTED_TO_SERVER,
-
-    STATE_WIFI_FAIL,
+	STATE_SETTING_CIPMUX,
 	STATE_CREATE_OWN_WIFI,
 	STATE_CREAT_SERVER,
+	STATE_CIPSERVERMAXCONN,
 	STATE_CHECKING_CLIENTS,
-	STATE_CLIENT_CONNECTED
+	STATE_CLIENT_CONNECTED,
+	STATE_CIPMODE
 }Conection_State_t;
 
 typedef enum{
@@ -68,12 +61,11 @@ typedef enum {
 	EMPTY,
 	SEND_FROM_PC,
 	SERVER_CLOSED,
-	CIPSEND_READY,
-	CIPSEND_PC,
 	UNKNOWN,
 	READ_BME280_response,
 	FAIL,
-	CIPSTATE
+	CIPSTATE,
+	CLOSE_FROM_PC
 }response_t; // Don't use ERROR the stm already uses it
 
 typedef struct {
@@ -88,13 +80,11 @@ KeywordResponse keywords[] = {
         {"ERROR", ERR, NO_TASK},
         {"busy", BUSY, NO_TASK},
         {"AT", AT, NO_TASK},
-		//{"SEND_FROM_PC", SEND_FROM_PC, NO_TASK},
-		//{"CIPSEND_PC", CIPSEND_PC, NO_TASK},
-		{">", CIPSEND_READY, CIPSEND_TASK},
 		{"CLOSED", SERVER_CLOSED, TRYING_TO_CONNECT},
 		{"READ_BME280",READ_BME280_response, READ_BME280},
 		{"FAIL", FAIL, TRYING_TO_CONNECT},
-        {"CIPSTATE", CIPSTATE, TRYING_TO_CONNECT}
+        {"CIPSTATE", CIPSTATE, TRYING_TO_CONNECT},
+        {"CLOSE_FROM_PC", CLOSE_FROM_PC, TRYING_TO_CONNECT}
 };
 
 typedef struct {
@@ -110,11 +100,10 @@ task_response key_for_tasks[] = {
         {BUSY, NO_TASK},
         { AT, NO_TASK},
 		{SEND_FROM_PC, TRYING_TO_CONNECT},
-		{CIPSEND_PC, NO_TASK},
-		{CIPSEND_READY, CIPSEND_TASK},
 		{SERVER_CLOSED, TRYING_TO_CONNECT},
 		{READ_BME280_response, READ_BME280},
-		{CIPSTATE, TRYING_TO_CONNECT}
+		{CIPSTATE, TRYING_TO_CONNECT},
+		{CLOSE_FROM_PC, TRYING_TO_CONNECT}
 };
 
 char comando_AT[]="AT\r\n";
@@ -148,19 +137,14 @@ typedef struct {
 
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
-        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=1\r\n",(Conection_State_t[]){STATE_CWSTARTSMART}},
-		{STATE_CWSTARTSMART, (response_t[]){OK}, 1,"AT+CWSTARTSMART=1\r\n",(Conection_State_t[]){STATE_CWSTOPSMART}},
-		{STATE_CWSTOPSMART, (response_t[]){OK}, 1,"AT+CWSTOPSMART\r\n",(Conection_State_t[]){STATE_CHECKWIFI}},
-		{STATE_CHECKWIFI, (response_t[]){OK}, 1,"AT+CWSAP?\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED}},
-        //{STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
-        {STATE_WIFI_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
-		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED_TO_SERVER}},
-		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
-		{STATE_WIFI_FAIL, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
-		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
+        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=2\r\n",(Conection_State_t[]){STATE_SETTING_CIPMUX}},
+		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
+		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CIPSERVERMAXCONN}},
+		{STATE_CIPSERVERMAXCONN, (response_t[]){OK}, 1,"AT+CIPSERVERMAXCONN=1\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
 		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
         {STATE_CHECKING_CLIENTS, (response_t[]){CONNECT}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CLIENT_CONNECTED}},
-		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
+		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CIPMODE}},
+		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -321,6 +305,17 @@ Bool send_tx(){
 	return 0;
 }
 
+void exit_passthrough(){
+	 HAL_Delay(100);
+	 strcpy(tx_buffer, "+"); // exit passthrough mode
+	 send_tx();
+	 HAL_Delay(2);
+	 send_tx();
+	 HAL_Delay(2);
+	 send_tx();
+	 HAL_Delay(100);
+}
+
 void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
     if (strcmp(buffer, new_content) == 0) {
         return; // Si son iguales, no hace nada
@@ -340,11 +335,11 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
+					if((response == CLOSE_FROM_PC)&&((*current_wifi_com_status)->state == STATE_CIPMODE)){
+						exit_passthrough();
+					}
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
-					if((*current_wifi_com_status)->state == STATE_CWSTARTSMART){
-						HAL_Delay(120000); //tiempo para conectar el esp al wifi con el touch
-					}
 					break;
 				}
 			}
@@ -353,7 +348,7 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			break;
 		}
 	}
-	if(((*current_wifi_com_status)->state == STATE_CONNECTED_TO_SERVER)||(((*current_wifi_com_status)->state == STATE_CLIENT_CONNECTED))){
+	if((*current_wifi_com_status)->state == STATE_CIPMODE){
 		memset(tx_buffer,0,BUFFER_SIZE);
 		return 1;
 	}
@@ -388,13 +383,6 @@ Bool assign_tx_buffer(task_response *tasks_with_response, size_t tasks_size){ //
 	}
 	if(strlen(data_to_send)>0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
-		if((*current_wifi_com_status).state == STATE_CLIENT_CONNECTED){
-			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n", strlen(data_to_send));
-		}
-		if((*current_wifi_com_status).state == STATE_CONNECTED_TO_SERVER){
-			sprintf(tx_buffer,"AT+CIPSEND=%d\r\n", strlen(data_to_send));
-		}
-		send_tx();
 		return 1;
 	}
 	return 0;
@@ -442,28 +430,25 @@ void process_message_lines(char *message) {
 }
 
 void init_congif(){
-	  strcpy(tx_buffer, "ATE0\r\n");
+	  strcpy(tx_buffer, "ATE0\r\n"); // Quitara el echo de los mensajes enviados al esp8266
 	  send_tx();
-
-	  HAL_Delay(1000);
-	  strcpy(tx_buffer, "+"); // exit passthrough mode
-	  send_tx();
-	  HAL_Delay(2);
-	  send_tx();
-	  HAL_Delay(2);
-	  send_tx();
-
 	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
-	  HAL_Delay(1000);
+	  HAL_Delay(500);
 
+	  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n"); //Que no trate de ponerse en passthrough tras quitarse
+	  send_tx();
+	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	  HAL_Delay(500);
 
-	  strcpy(tx_buffer, "AT+SAVETRANSLINK=0\r\n");
+	  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n"); // Que no se conecte a una wifi automaticamente al encenderse
 	  send_tx();
-	  HAL_Delay(100);
-	  strcpy(tx_buffer, "AT+CWAUTOCONN=0\r\n");
+	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	  HAL_Delay(500);
+
+	  strcpy(tx_buffer, "AT+CWQAP\r\n"); // Desconexion de wifi
 	  send_tx();
-	  strcpy(tx_buffer, "AT+CWQAP\r\n");
-	  send_tx();
+	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+	  HAL_Delay(500);
 }
 /* USER CODE END 0 */
 
@@ -509,12 +494,15 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET); // SET del esp8266 IO0
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); // SET del esp8266 EN
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); // Hacer reset del esp8266
+  HAL_Delay(50);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); // Quitar el reset del esp8266
+  HAL_Delay(1000);
 
   init_congif();
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE); // A escuchar por el DMA
   /* USER CODE END 2 */
 
   /* Infinite loop */
