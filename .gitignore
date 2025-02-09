@@ -1,5 +1,6 @@
 .settings/
 [Dd]ebug/
 [Rr]elease/
+SWV_export/
 *.launch
 *.metadata
