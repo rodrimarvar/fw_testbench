@@ -36,20 +36,13 @@
 typedef enum {
 	STATE_CHECKING_COM,
     STATE_SETTING_CWMODE,
-    STATE_TRYING_WIFI_CONEXION,
-	STATE_CWSTARTSMART,
-	STATE_CWSTOPSMART,
-	STATE_CHECKWIFI,
-
-	STATE_WIFI_CONNECTED,
-	STATE_CONNECTING_TO_SERVER,
-	STATE_CONNECTED_TO_SERVER,
-
-    STATE_WIFI_FAIL,
+    STATE_CIPMUX,
 	STATE_CREATE_OWN_WIFI,
+	STATE_CIPSERVERMAXCONN,
 	STATE_CREAT_SERVER,
 	STATE_CHECKING_CLIENTS,
-	STATE_CLIENT_CONNECTED
+	STATE_CLIENT_CONNECTED,
+	STATE_CIPMODE
 }Conection_State_t;
 
 typedef enum{
@@ -73,7 +66,7 @@ typedef enum {
 	UNKNOWN,
 	READ_BME280_response,
 	FAIL,
-	CIPSTATE
+	CLOSE_FROM_PC
 }response_t; // Don't use ERROR the stm already uses it
 
 typedef struct {
@@ -94,7 +87,7 @@ KeywordResponse keywords[] = {
 		{"CLOSED", SERVER_CLOSED, TRYING_TO_CONNECT},
 		{"READ_BME280",READ_BME280_response, READ_BME280},
 		{"FAIL", FAIL, TRYING_TO_CONNECT},
-        {"CIPSTATE", CIPSTATE, TRYING_TO_CONNECT}
+        {"CLOSE_FROM_PC", CLOSE_FROM_PC, TRYING_TO_CONNECT}
 };
 
 typedef struct {
@@ -114,7 +107,7 @@ task_response key_for_tasks[] = {
 		{CIPSEND_READY, CIPSEND_TASK},
 		{SERVER_CLOSED, TRYING_TO_CONNECT},
 		{READ_BME280_response, READ_BME280},
-		{CIPSTATE, TRYING_TO_CONNECT}
+		{CLOSE_FROM_PC, TRYING_TO_CONNECT}
 };
 
 char comando_AT[]="AT\r\n";
@@ -148,19 +141,14 @@ typedef struct {
 
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
-        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=1\r\n",(Conection_State_t[]){STATE_CWSTARTSMART}},
-		{STATE_CWSTARTSMART, (response_t[]){OK}, 1,"AT+CWSTARTSMART=1\r\n",(Conection_State_t[]){STATE_CWSTOPSMART}},
-		{STATE_CWSTOPSMART, (response_t[]){OK}, 1,"AT+CWSTOPSMART\r\n",(Conection_State_t[]){STATE_CHECKWIFI}},
-		{STATE_CHECKWIFI, (response_t[]){OK}, 1,"AT+CWSAP?\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED}},
-        //{STATE_TRYING_WIFI_CONEXION, (response_t[]){OK, FAIL}, 2,"AT+CWJAP=\"MiFibra-9990\",\"rvbunQ6h\"\r\n",(Conection_State_t[]){STATE_WIFI_CONNECTED, STATE_WIFI_FAIL}},//poner bn la contraseña
-        {STATE_WIFI_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
-		{STATE_CONNECTING_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.1.21\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED_TO_SERVER}},
-		{STATE_CONNECTED_TO_SERVER, (response_t[]){SERVER_CLOSED}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CONNECTING_TO_SERVER}},
-		{STATE_WIFI_FAIL, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
-		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
+        {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=2\r\n",(Conection_State_t[]){STATE_CIPMUX}},
+		{STATE_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
+		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CIPSERVERMAXCONN}},
+		{STATE_CIPSERVERMAXCONN, (response_t[]){OK}, 1,"AT+CIPSERVERMAXCONN=1\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
 		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
         {STATE_CHECKING_CLIENTS, (response_t[]){CONNECT}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CLIENT_CONNECTED}},
-		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
+		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL, OK}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS, STATE_CIPMODE}},
+		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}}
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -230,7 +218,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if(Size == 128){ // Poner el tamaño del buffer a mano
 		overflow_start = head;
 	}
-
+	printf("Hola mundo\n");
     if (Size > 0) {
     	if(overflow_start > Size){
     		//printf("overflow start %d\n", overflow_start);
@@ -315,10 +303,21 @@ Bool send_tx(){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
 		time_tx = HAL_GetTick();
 		flag_tx_not_ok = 1;
-		//HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
+}
+
+void exit_passthrough(){
+	HAL_Delay(200);
+	strcpy(tx_buffer, "+"); // exit passthrough mode
+	send_tx();
+	HAL_Delay(2);
+	send_tx();
+	HAL_Delay(2);
+	send_tx();
+	HAL_Delay(200);
 }
 
 void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
@@ -340,11 +339,12 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
+					if((response == CLOSE_FROM_PC)&&((*current_wifi_com_status)->state == STATE_CIPMODE)){
+						exit_passthrough();
+					}
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
-					if((*current_wifi_com_status)->state == STATE_CWSTARTSMART){
-						HAL_Delay(120000); //tiempo para conectar el esp al wifi con el touch
-					}
+
 					break;
 				}
 			}
@@ -353,7 +353,7 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			break;
 		}
 	}
-	if(((*current_wifi_com_status)->state == STATE_CONNECTED_TO_SERVER)||(((*current_wifi_com_status)->state == STATE_CLIENT_CONNECTED))){
+	if((*current_wifi_com_status)->state == STATE_CIPMODE){
 		memset(tx_buffer,0,BUFFER_SIZE);
 		return 1;
 	}
@@ -388,12 +388,6 @@ Bool assign_tx_buffer(task_response *tasks_with_response, size_t tasks_size){ //
 	}
 	if(strlen(data_to_send)>0){
 		memset(tx_buffer, 0, BUFFER_SIZE);
-		if((*current_wifi_com_status).state == STATE_CLIENT_CONNECTED){
-			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n", strlen(data_to_send));
-		}
-		if((*current_wifi_com_status).state == STATE_CONNECTED_TO_SERVER){
-			sprintf(tx_buffer,"AT+CIPSEND=%d\r\n", strlen(data_to_send));
-		}
 		send_tx();
 		return 1;
 	}
@@ -445,14 +439,6 @@ void init_congif(){
 	  strcpy(tx_buffer, "ATE0\r\n");
 	  send_tx();
 
-	  HAL_Delay(1000);
-	  strcpy(tx_buffer, "+"); // exit passthrough mode
-	  send_tx();
-	  HAL_Delay(2);
-	  send_tx();
-	  HAL_Delay(2);
-	  send_tx();
-
 	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	  HAL_Delay(1000);
 
@@ -464,6 +450,7 @@ void init_congif(){
 	  send_tx();
 	  strcpy(tx_buffer, "AT+CWQAP\r\n");
 	  send_tx();
+	  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 }
 /* USER CODE END 0 */
 
@@ -515,6 +502,8 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
   init_congif();
+
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
