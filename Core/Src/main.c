@@ -82,7 +82,7 @@ typedef struct {
 KeywordResponse keywords[] = {
         {"CONNECT", CONNECT, TRYING_TO_CONNECT},
         {"OK", OK, TRYING_TO_CONNECT},
-        {"ERROR", ERR, NO_TASK},
+        {"ERROR", ERR, TRYING_TO_CONNECT},
         {"busy", BUSY, NO_TASK},
         {"AT", AT, NO_TASK},
 		//{"SEND_FROM_PC", SEND_FROM_PC, NO_TASK},
@@ -115,14 +115,14 @@ typedef struct {
 } com_state_wifi_card;
 
 com_state_wifi_card com_wifi_card_values[] = {
-        {STATE_CHECKING_COM, (response_t[]){OK}, 1,"ATE1\r\n",(Conection_State_t[]){STATE_NO_ECHO}},
+        {STATE_CHECKING_COM, (response_t[]){OK}, 1,"AT+CIPMODE=0\r\n",(Conection_State_t[]){STATE_NO_ECHO}},
 		{STATE_NO_ECHO, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_CWQAP}},
 		{STATE_CWQAP, (response_t[]){OK}, 1,"AT+CWQAP\r\n",(Conection_State_t[]){STATE_CIPSERVER_CLOSE}},
-		{STATE_CIPSERVER_CLOSE, (response_t[]){OK}, 1,"AT+CIPSERVER=0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE}},
+		{STATE_CIPSERVER_CLOSE, (response_t[]){OK, ERR}, 2,"AT+CIPSERVER=0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE, STATE_SETTING_CWMODE}},
         {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=2\r\n",(Conection_State_t[]){STATE_SETTING_CIPMUX}},
 		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
-		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CIPSERVERMAXCONN}},
-		{STATE_CIPSERVERMAXCONN, (response_t[]){OK}, 1,"AT+CIPSERVERMAXCONN=1\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
+		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
+		{STATE_CIPSERVERMAXCONN, (response_t[]){OK}, 1,"AT+CIPSERVERMAXCONN=5\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
 		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
         {STATE_CHECKING_CLIENTS, (response_t[]){CONNECT}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CLIENT_CONNECTED}},
 		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL, OK}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS, STATE_CIPMODE}},
@@ -228,14 +228,14 @@ void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
     // Copiar datos desde el buffer circular al `message_buffer`
     while (start != end) {
         message_buffer[index++] = rx_buffer[start];
-        printf("%c %d\n", rx_buffer[start], start);
+        //printf("%c %d\n", rx_buffer[start], start);
         start = (start + 1) % BUFFER_SIZE;
         if (index >= sizeof(message_buffer) - 1) break; // Prevenir desbordamiento del buffer temporal
     }
 
     if(overflow == 0){
     	count++;
-    	//printf("\nterminado %d\n", count);
+    	printf("\nterminado %d\n", count);
     	message_buffer[index] = '\0';  // Finalizar la cadena
     	if(strlen(message_buffer) != 0){
     		process_message_lines(message_buffer); // Procesar el mensaje línea por línea
@@ -246,7 +246,7 @@ void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
 }
 
 response_t match_respones(char* line){
-	//printf("%s\n", line);
+	printf("%s\n", line);
 	for (int k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
 		if (strstr(line, keywords[k].keyword) != NULL) {
 			return keywords[k].response;
@@ -355,7 +355,7 @@ void task_handling(response_t response){
 
 void process_message_lines(char *message) {
     char *line = strtok(message, "\n");  // Dividir mensaje en líneas
-    printf("%s\n", line);
+    //printf("%s\n", line);
 
     while (line != NULL) {
         response_t response = match_respones(line);  // Convertir en respuesta
@@ -437,7 +437,12 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    HAL_Delay(2000);
+    if(current_wifi_com_status->state != STATE_CIPMODE){
+    	HAL_Delay(5000);
+    }
+    if(current_wifi_com_status->state == STATE_CHECKING_CLIENTS){
+        	HAL_Delay(20000);
+    }
     if((HAL_GetTick() - tiempo_check > 1000)&&(current_wifi_com_status->state == STATE_CHECKING_COM)){
     	tiempo_check = HAL_GetTick();
     	exit_passthrough();
