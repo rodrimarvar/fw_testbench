@@ -42,9 +42,9 @@ typedef enum {
 	STATE_SETTING_CIPMUX,
 	STATE_CREATE_OWN_WIFI,
 	STATE_CIPSERVERMAXCONN,
-	STATE_CREAT_SERVER,
+	STATE_CONNECT_TO_SERVER,
 	STATE_CHECKING_CLIENTS,
-	STATE_CLIENT_CONNECTED,
+	STATE_CONNECTED,
 	STATE_CIPMODE
 }Conection_State_t;
 
@@ -120,13 +120,11 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_CWQAP, (response_t[]){OK}, 1,"AT+CWQAP\r\n",(Conection_State_t[]){STATE_CIPSERVER_CLOSE}},
 		{STATE_CIPSERVER_CLOSE, (response_t[]){OK, ERR}, 2,"AT+CIPSERVER=0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE, STATE_SETTING_CWMODE}},
         {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=2\r\n",(Conection_State_t[]){STATE_SETTING_CIPMUX}},
-		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=1\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
-		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
-		{STATE_CIPSERVERMAXCONN, (response_t[]){OK}, 1,"AT+CIPSERVERMAXCONN=5\r\n",(Conection_State_t[]){STATE_CREAT_SERVER}},
-		{STATE_CREAT_SERVER, (response_t[]){OK}, 1,"AT+CIPSERVER=1,8000\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
-        {STATE_CHECKING_CLIENTS, (response_t[]){CONNECT}, 1,"AT+CIPSTATE?\r\n",(Conection_State_t[]){STATE_CLIENT_CONNECTED}},
-		{STATE_CLIENT_CONNECTED, (response_t[]){FAIL, OK}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS, STATE_CIPMODE}},
-		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC}, 1,"AT\r\n",(Conection_State_t[]){STATE_CHECKING_CLIENTS}},
+		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
+		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER}},
+		{STATE_CONNECT_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.4.2\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED}},
+		{STATE_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CIPMODE}},
+		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC}, 1,"AT\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER}},
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
