@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <malloc.h>
 #include <math.h>
+#include "BME280_STM32.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,7 +44,6 @@ typedef enum {
 	STATE_CREATE_OWN_WIFI,
 	STATE_CIPSERVERMAXCONN,
 	STATE_CONNECT_TO_SERVER,
-	STATE_CHECKING_CLIENTS,
 	STATE_CONNECTED,
 	STATE_CIPMODE
 }Conection_State_t;
@@ -98,8 +98,7 @@ KeywordResponse keywords[] = {
 /*float Temperature=0.00, Pressure=0.00, Humidity=0.00;
 const char *BME_data_format = "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f %%\n";*/
 
-int Temperature=0, Pressure=0, Humidity=0;
-const char *BME_data_format = "Temp %d C, Press %d Pa, Hum %d\n";
+float Temperature=0, Pressure=0, Humidity=0;
 
 typedef enum { FALSE = 0, TRUE = 1 } Bool;
 
@@ -173,7 +172,7 @@ response_t response_global;
 
 volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
-volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0;
+volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0, flag_close_server = 0, flag_read_bme280 = 0, flag_cipsend = 0;
 uint32_t time_tx = 0;
 uint32_t tiempo_check = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
@@ -279,7 +278,7 @@ void MX_USB_HOST_Process(void);
 /* USER CODE BEGIN 0 */
 Bool send_tx(){
 	tx_buffer_size = strlen(tx_buffer);
-	//printf("send_tx() %s",tx_buffer);
+	printf("send_tx() %s",tx_buffer);
 
 	if(tx_buffer_size != 0){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
@@ -310,6 +309,9 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
+					if((*current_wifi_com_status)->state == STATE_CIPMODE){
+						flag_close_server = 1;
+					}
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
 					(*current_wifi_com_status) = &com_wifi_card_values[k];
 					break;
@@ -341,10 +343,12 @@ void task_handling(response_t response){
 			break;
 		case READ_BME280:
 			printf("Estoy en READ_BME280 state\n");
-			break;
-		case NO_TASK:
+			flag_read_bme280 = 1;
 			break;
 		case CIPSEND_TASK:
+			flag_cipsend = 1;
+			break;
+		case NO_TASK:
 			break;
 		default:
 			break;
@@ -417,6 +421,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+  BME280_Config(OSRS_2, OSRS_16, OSRS_1, MODE_NORMAL, T_SB_0p5, IIR_16);
+
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
@@ -438,20 +444,46 @@ int main(void)
     if(current_wifi_com_status->state != STATE_CIPMODE){
     	HAL_Delay(5000);
     }
-    if(current_wifi_com_status->state == STATE_CHECKING_CLIENTS){
-        	HAL_Delay(20000);
-    }
     if((HAL_GetTick() - tiempo_check > 1000)&&(current_wifi_com_status->state == STATE_CHECKING_COM)){
     	tiempo_check = HAL_GetTick();
     	exit_passthrough();
     	send_tx();
     }
-    if(((flag_tx_not_ok == 1)||(connected_to_server == 0))&&(HAL_GetTick()-time_tx>20000)){ //si no se han enviado los datos correctamente se vuelven a enviar
+    if(((flag_tx_not_ok == 1)||(connected_to_server == 0))&&(HAL_GetTick()-time_tx>10000)){ //si no se han enviado los datos correctamente se vuelven a enviar
     	send_tx();
     }
-    if(flag_send_tx == 1){ // si desde la callback nos avisan enviamos
+    if((flag_send_tx == 1)&&(connected_to_server == 0)){ // si desde la callback nos avisan enviamos
     	send_tx();
     	flag_send_tx = 0;
+    }
+    if(flag_close_server == 1){
+    	exit_passthrough();
+    	strcpy(tx_buffer, "AT+CIPMODE=0\r\n");
+    	send_tx();
+    	strcpy(tx_buffer, "AT+CIPCLOSE\r\n");
+    	send_tx();
+    	flag_close_server = 0;
+    }
+    if(flag_read_bme280 == 1){
+    	update_buffer(tx_buffer, BUFFER_SIZE,"AT\r\n");
+    	send_tx();
+    	BME280_Measure(); // CAMBIAR de 64 BITS a 32 BITS
+    	memset(data_to_send, 0, BUFFER_SIZE);
+    	//sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f %%\r\n", Temperature, Pressure, Humidity);
+    	sprintf(data_to_send, "Hola mundo");
+    	HAL_Delay(5000);
+    	int lentgh = strlen(data_to_send);
+    	memset(tx_buffer, 0, BUFFER_SIZE);
+    	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", lentgh);
+    	send_tx();
+    	flag_read_bme280 = 0;
+    }
+    if(flag_cipsend == 1){
+    	HAL_Delay(5000);
+    	update_buffer(tx_buffer, BUFFER_SIZE,data_to_send);
+    	send_tx();
+    	memset(tx_buffer, 0, BUFFER_SIZE);
+    	flag_cipsend = 0;
     }
   }
   /* USER CODE END 3 */
