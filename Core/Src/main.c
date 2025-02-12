@@ -65,7 +65,6 @@ typedef enum {
 	SEND_FROM_PC,
 	SERVER_CLOSED,
 	CIPSEND_READY,
-	CIPSEND_PC,
 	UNKNOWN,
 	READ_BME280_response,
 	FAIL,
@@ -122,8 +121,8 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
 		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER}},
 		{STATE_CONNECT_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.4.2\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED}},
-		{STATE_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CIPMODE}},
-		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC}, 1,"AT\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER}},
+		{STATE_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMODE=0\r\n",(Conection_State_t[]){STATE_CIPMODE}},
+		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC, SERVER_CLOSED}, 2,"AT\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER, STATE_CONNECT_TO_SERVER}},
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -164,7 +163,6 @@ DMA_HandleTypeDef hdma_usart2_tx;
 /* USER CODE BEGIN PV */
 #define BUFFER_SIZE 128
 volatile uint16_t head = 0;    // Posición de inicio antes de recibir datos
-//const uint16_t buffer_size = BUFFER_SIZE;
 
 volatile Bool flag_receive = 0;
 
@@ -172,16 +170,17 @@ response_t response_global;
 
 volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
-volatile Bool flag_tx_not_ok = 0, flag_send_tx = 0, flag_close_server = 0, flag_read_bme280 = 0, flag_cipsend = 0;
-uint32_t time_tx = 0;
-uint32_t tiempo_check = 0;
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
-
 char message_buffer[BUFFER_SIZE]; // Buffer para almacenar un mensaje completo
+
+volatile Bool flag_tx_not_ok = 0, flag_close_server = 0;
+volatile Bool flag_read_bme280 = 0, flag_cipsend = 0, flag_send_tx = 0;
+
+uint32_t time_tx = 0,tiempo_check = 0, delay = 0;
+
 uint16_t overflow_start = 0;  // Posición del buffer antes del desbordamiento
 
 Bool connected_to_server = 0, *connected_to_server_ptr = &connected_to_server;
-Bool cwjap = 0, *cwjap_ptr = &cwjap;
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size);
 void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow);
@@ -213,6 +212,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if(huart->Instance == USART2){
+		printf("\nEnviado\n");
 		flag_tx_not_ok = 0;
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
@@ -431,6 +431,8 @@ int main(void)
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   strcpy(tx_buffer, "ATE0\r\n");
+
+  int lentgh = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -453,8 +455,8 @@ int main(void)
     	send_tx();
     }
     if((flag_send_tx == 1)&&(connected_to_server == 0)){ // si desde la callback nos avisan enviamos
-    	send_tx();
     	flag_send_tx = 0;
+    	send_tx();
     }
     if(flag_close_server == 1){
     	exit_passthrough();
@@ -464,26 +466,26 @@ int main(void)
     	send_tx();
     	flag_close_server = 0;
     }
-    if(flag_read_bme280 == 1){
-    	update_buffer(tx_buffer, BUFFER_SIZE,"AT\r\n");
-    	send_tx();
+    if((flag_read_bme280 == 1)&&(HAL_GetTick() - delay > 2000)){
+    	flag_read_bme280 = 0;
     	BME280_Measure(); // CAMBIAR de 64 BITS a 32 BITS
     	memset(data_to_send, 0, BUFFER_SIZE);
     	//sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f %%\r\n", Temperature, Pressure, Humidity);
     	sprintf(data_to_send, "Hola mundo");
-    	HAL_Delay(5000);
-    	int lentgh = strlen(data_to_send);
+    	lentgh = strlen(data_to_send);
     	memset(tx_buffer, 0, BUFFER_SIZE);
     	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", lentgh);
     	send_tx();
-    	flag_read_bme280 = 0;
     }
-    if(flag_cipsend == 1){
-    	HAL_Delay(5000);
-    	update_buffer(tx_buffer, BUFFER_SIZE,data_to_send);
+    if((flag_cipsend == 1)&&(HAL_GetTick() - delay > 2000)){
+    	flag_cipsend = 0;
+    	memset(tx_buffer, 0, BUFFER_SIZE);
+    	strcpy(tx_buffer, data_to_send);
     	send_tx();
     	memset(tx_buffer, 0, BUFFER_SIZE);
-    	flag_cipsend = 0;
+    }
+    if((flag_read_bme280 == 1)||(flag_cipsend == 1)){
+        	delay = HAL_GetTick();
     }
   }
   /* USER CODE END 3 */
