@@ -45,7 +45,8 @@ typedef enum {
 	STATE_CIPSERVERMAXCONN,
 	STATE_CONNECT_TO_SERVER,
 	STATE_CONNECTED,
-	STATE_CIPMODE
+	STATE_CIPMODE_1,
+	STATE_CIPSEND_ACTIVATED
 }Conection_State_t;
 
 typedef enum{
@@ -86,7 +87,7 @@ KeywordResponse keywords[] = {
         {"AT", AT, NO_TASK},
 		//{"SEND_FROM_PC", SEND_FROM_PC, NO_TASK},
 		//{"CIPSEND_PC", CIPSEND_PC, NO_TASK},
-		{">", CIPSEND_READY, CIPSEND_TASK},
+		{">", CIPSEND_READY, TRYING_TO_CONNECT},
 		{"CLOSED", SERVER_CLOSED, TRYING_TO_CONNECT},
 		{"READ_BME280",READ_BME280_response, READ_BME280},
 		{"FAIL", FAIL, TRYING_TO_CONNECT},
@@ -121,8 +122,9 @@ com_state_wifi_card com_wifi_card_values[] = {
 		{STATE_SETTING_CIPMUX, (response_t[]){OK}, 1,"AT+CIPMUX=0\r\n",(Conection_State_t[]){STATE_CREATE_OWN_WIFI}},
 		{STATE_CREATE_OWN_WIFI, (response_t[]){OK}, 1,"AT+CWSAP=\"MI PUNTO\",\"12345678\",3,0\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER}},
 		{STATE_CONNECT_TO_SERVER, (response_t[]){CONNECT}, 1,"AT+CIPSTART=\"TCP\",\"192.168.4.2\",8000\r\n",(Conection_State_t[]){STATE_CONNECTED}},
-		{STATE_CONNECTED, (response_t[]){OK}, 1,"AT+CIPMODE=0\r\n",(Conection_State_t[]){STATE_CIPMODE}},
-		{STATE_CIPMODE, (response_t[]){CLOSE_FROM_PC, SERVER_CLOSED}, 2,"AT\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER, STATE_CONNECT_TO_SERVER}},
+		{STATE_CONNECTED, (response_t[]){OK, SERVER_CLOSED}, 2,"AT+CIPMODE=1\r\n",(Conection_State_t[]){STATE_CIPMODE_1, STATE_CONNECT_TO_SERVER}},
+		{STATE_CIPMODE_1, (response_t[]){CIPSEND_READY, SERVER_CLOSED}, 2,"AT+CIPSEND\r\n",(Conection_State_t[]){STATE_CIPSEND_ACTIVATED, STATE_CONNECT_TO_SERVER}},
+		{STATE_CIPSEND_ACTIVATED, (response_t[]){CLOSE_FROM_PC, SERVER_CLOSED}, 2,"AT\r\n",(Conection_State_t[]){STATE_CONNECT_TO_SERVER, STATE_CONNECT_TO_SERVER}},
 };
 
 com_state_wifi_card* current_wifi_com_status=&com_wifi_card_values[0];
@@ -309,7 +311,7 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
-					if((*current_wifi_com_status)->state == STATE_CIPMODE){
+					if((response == SERVER_CLOSED)||(response == CLOSE_FROM_PC)){
 						flag_close_server = 1;
 					}
 					update_buffer(tx_buffer, BUFFER_SIZE, com_wifi_card_values[k].command);
@@ -322,7 +324,7 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			break;
 		}
 	}
-	if((*current_wifi_com_status)->state == STATE_CIPMODE){
+	if((*current_wifi_com_status)->state == STATE_CIPSEND_ACTIVATED){
 		memset(tx_buffer,0,BUFFER_SIZE);
 		return 1;
 	}
@@ -443,7 +445,7 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if(current_wifi_com_status->state != STATE_CIPMODE){
+    if(current_wifi_com_status->state != STATE_CIPSEND_ACTIVATED){
     	HAL_Delay(5000);
     }
     if((HAL_GetTick() - tiempo_check > 1000)&&(current_wifi_com_status->state == STATE_CHECKING_COM)){
@@ -466,27 +468,28 @@ int main(void)
     	send_tx();
     	flag_close_server = 0;
     }
-    if((flag_read_bme280 == 1)&&(HAL_GetTick() - delay > 2000)){
+    if((flag_read_bme280 == 1)){
     	flag_read_bme280 = 0;
     	BME280_Measure(); // CAMBIAR de 64 BITS a 32 BITS
-    	memset(data_to_send, 0, BUFFER_SIZE);
+    	//memset(data_to_send, 0, BUFFER_SIZE);
     	//sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f %%\r\n", Temperature, Pressure, Humidity);
-    	sprintf(data_to_send, "Hola mundo");
+    	///sprintf(data_to_send, "Hola mundo");
     	lentgh = strlen(data_to_send);
     	memset(tx_buffer, 0, BUFFER_SIZE);
-    	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", lentgh);
+    	//sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", lentgh);
+    	sprintf(tx_buffer, "Hola mundo");
     	send_tx();
     }
-    if((flag_cipsend == 1)&&(HAL_GetTick() - delay > 2000)){
+    /*if((flag_cipsend == 1)&&(HAL_GetTick() - delay > 2000)){
     	flag_cipsend = 0;
     	memset(tx_buffer, 0, BUFFER_SIZE);
     	strcpy(tx_buffer, data_to_send);
     	send_tx();
     	memset(tx_buffer, 0, BUFFER_SIZE);
-    }
-    if((flag_read_bme280 == 1)||(flag_cipsend == 1)){
+    }*/
+    /*if((flag_read_bme280 == 1)||(flag_cipsend == 1)){
         	delay = HAL_GetTick();
-    }
+    }*/
   }
   /* USER CODE END 3 */
 }
