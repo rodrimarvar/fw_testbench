@@ -214,7 +214,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if(huart->Instance == USART2){
-		printf("\nEnviado\n");
+		//printf("\nEnviado\n");
 		flag_tx_not_ok = 0;
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
@@ -234,7 +234,7 @@ void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
 
     if(overflow == 0){
     	count++;
-    	printf("\nterminado %d\n", count);
+    	//printf("\nterminado %d\n", count);
     	message_buffer[index] = '\0';  // Finalizar la cadena
     	if(strlen(message_buffer) != 0){
     		process_message_lines(message_buffer); // Procesar el mensaje línea por línea
@@ -318,7 +318,7 @@ void print_state(Conection_State_t state) {
 
 Bool send_tx(){
 	tx_buffer_size = strlen(tx_buffer);
-	printf("send_tx() %s",tx_buffer);
+	//printf("send_tx() %s",tx_buffer);
 
 	if(tx_buffer_size != 0){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
@@ -349,10 +349,10 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
-					printf("Estado actual\n");
-					print_state((*current_wifi_com_status)->state);
-					printf("Estado proximo\n");
-					print_state((*current_wifi_com_status)->next_state[i]);
+					//printf("Estado actual\n");
+					//print_state((*current_wifi_com_status)->state);
+					//printf("Estado proximo\n");
+					//print_state((*current_wifi_com_status)->next_state[i]);
 					if((response == SERVER_CLOSED)||(response == CLOSE_FROM_PC)){
 						flag_close_server = 1;
 					}
@@ -388,9 +388,10 @@ void task_handling(response_t response){
 		case READ_BME280:
 			//printf("Estoy en READ_BME280 state\n");
 			//flag_read_bme280 = 1;
+			printf("Antes del READ_BME280 el milisegundo de programa es %lu\n", HAL_GetTick());
 			BME280_Measure();
 			memset(data_to_send, 0, BUFFER_SIZE);
-			sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
+			sprintf(data_to_send, "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
 			data_lentgh = strlen(data_to_send);
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_lentgh);
@@ -402,6 +403,7 @@ void task_handling(response_t response){
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			strcpy(tx_buffer, data_to_send);
 			HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,strlen(tx_buffer), 1000);
+			printf("Tras el cipsend el milisegundo de programa es %lu\n", HAL_GetTick());
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			//delay = HAL_GetTick();
 			break;
@@ -500,9 +502,9 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if(current_wifi_com_status->state != STATE_CONNECTED){
+    /*if(current_wifi_com_status->state != STATE_CONNECTED){
     	HAL_Delay(5000);
-    }
+    }*/
     if((HAL_GetTick() - tiempo_check > 1000)&&(current_wifi_com_status->state == STATE_CHECKING_COM)){
     	tiempo_check = HAL_GetTick();
     	send_tx();
