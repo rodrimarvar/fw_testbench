@@ -178,6 +178,8 @@ volatile Bool flag_read_bme280 = 0, flag_cipsend = 0, flag_send_tx = 0;
 
 uint32_t time_tx = 0,tiempo_check = 0, delay = 0;
 
+int data_lentgh = 0;
+
 uint16_t overflow_start = 0;  // Posición del buffer antes del desbordamiento
 
 Bool connected_to_server = 0, *connected_to_server_ptr = &connected_to_server;
@@ -384,15 +386,24 @@ void task_handling(response_t response){
 			connected_to_server = handle_wifi_card_state(response, &current_wifi_com_status);
 			break;
 		case READ_BME280:
-			printf("Estoy en READ_BME280 state\n");
-			flag_read_bme280 = 1;
-			 delay = HAL_GetTick();
+			//printf("Estoy en READ_BME280 state\n");
+			//flag_read_bme280 = 1;
+			BME280_Measure();
+			memset(data_to_send, 0, BUFFER_SIZE);
+			sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
+			data_lentgh = strlen(data_to_send);
+			memset(tx_buffer, 0, BUFFER_SIZE);
+			sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_lentgh);
+			send_tx();
+			//delay = HAL_GetTick();
 			break;
 		case CIPSEND_TASK:
-			flag_cipsend = 1;
+			//flag_cipsend = 1;
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			strcpy(tx_buffer, data_to_send);
-			delay = HAL_GetTick();
+			HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,strlen(tx_buffer), 1000);
+			memset(tx_buffer, 0, BUFFER_SIZE);
+			//delay = HAL_GetTick();
 			break;
 		case NO_TASK:
 			break;
@@ -478,7 +489,7 @@ int main(void)
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   strcpy(tx_buffer, "ATE0\r\n");
 
-  int lentgh = 0;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -502,24 +513,6 @@ int main(void)
     if((flag_send_tx == 1)&&(connected_to_server == 0)){ // si desde la callback nos avisan enviamos
     	flag_send_tx = 0;
     	send_tx();
-    }
-    if((flag_read_bme280 == 1)&&(HAL_GetTick() - delay >1000)){
-    	flag_read_bme280 = 0;
-    	BME280_Measure(); // CAMBIAR de 64 BITS a 32 BITS
-    	memset(data_to_send, 0, BUFFER_SIZE);
-    	sprintf(data_to_send, "Temp: %.2f C, Press: %.2f hPa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
-    	//sprintf(data_to_send, "Hola mundo");
-    	lentgh = strlen(data_to_send);
-    	memset(tx_buffer, 0, BUFFER_SIZE);
-    	sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", lentgh);
-    	//sprintf(tx_buffer, "Hola mundo");
-    	send_tx();
-    }
-    if((flag_cipsend == 1)&&(HAL_GetTick() - delay >1000)){
-    	flag_cipsend = 0;
-    	//send_tx();
-    	HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,strlen(tx_buffer), 1000);
-    	memset(tx_buffer, 0, BUFFER_SIZE);
     }
   }
   /* USER CODE END 3 */
