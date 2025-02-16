@@ -385,6 +385,7 @@ void task_handling(response_t response){
 	}
 	switch(task){
 		case TRYING_TO_CONNECT:
+			flag_cipsend = 0;
 			connected_to_server = handle_wifi_card_state(response, &current_wifi_com_status);
 			break;
 		case READ_BME280:
@@ -396,7 +397,6 @@ void task_handling(response_t response){
 			data_lentgh = strlen(data_to_send);
 			memset(tx_buffer, 0, BUFFER_SIZE);
 			sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_lentgh);
-			//delay = HAL_GetTick();
 			break;
 		case CIPSEND_TASK:
 			if(flag_cipsend == 0){
@@ -408,7 +408,6 @@ void task_handling(response_t response){
 				printf("Ha llegado SEND OK\n");
 				flag_cipsend = 0;
 			}
-			//delay = HAL_GetTick();
 			break;
 		case NO_TASK:
 			break;
@@ -503,15 +502,9 @@ int main(void)
     MX_USB_HOST_Process();
 
     /* USER CODE BEGIN 3 */
-    if(current_wifi_com_status->state != STATE_CONNECTED){
-    	HAL_Delay(1000);
-    }
-    if((HAL_GetTick() - tiempo_check > 1000)&&(current_wifi_com_status->state == STATE_CHECKING_COM)){
-    	tiempo_check = HAL_GetTick();
-    	send_tx();
-    }
-    if(((flag_tx_not_ok == 1)||(connected_to_server == 0))&&(HAL_GetTick()-time_tx > 10000)){ //si no se han enviado los datos correctamente se vuelven a enviar
-    	send_tx();
+    if((current_wifi_com_status->state != STATE_CONNECTED)&&(HAL_GetTick() - delay > 2000)){
+    	delay = HAL_GetTick();
+    	flag_send_tx = 1;
     }
     if((flag_send_tx == 1)&&(connected_to_server == 0)){ // si desde la callback nos avisan enviamos
     	flag_send_tx = 0;
