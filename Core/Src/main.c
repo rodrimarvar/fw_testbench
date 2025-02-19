@@ -29,6 +29,8 @@
 #include <malloc.h>
 #include <math.h>
 #include "BME280_STM32.h"
+#include "cobs.h"
+#include <assert.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -167,6 +169,7 @@ volatile Bool flag_receive = 0;
 
 response_t response_global;
 
+volatile uint8_t encodedBuffer[BUFFER_SIZE];
 volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
@@ -197,10 +200,10 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if(Size == 128){ // Poner el tamaño del buffer a mano
 		overflow_start = head;
 	}
-	//printf("RXEvent_Callback\r\n");
-    if (Size > 0) {
+	else if (Size > 0) {
     	if(overflow_start > Size){
     		//printf("overflow start %d\n", overflow_start);
+    		//size_t decodedSize = decodeCOBSToCharBuffer(rx_buffer, BUFFER_SIZE, decodedBuffer, BUFFER_SIZE);
     		copy_and_process_message(overflow_start, BUFFER_SIZE, 1);
     		head = 0;
     	}
@@ -254,6 +257,74 @@ response_t match_respones(char* line){
 		return EMPTY;
 	}
 	return UNKNOWN;
+}
+
+size_t cobsEncode(const void *data, size_t length, uint8_t *buffer)
+{
+    assert(data && buffer);
+    uint8_t *encode = buffer;
+    uint8_t *codep = encode++;
+    uint8_t code = 1;
+
+    for (const uint8_t *byte = (const uint8_t *)data; length--; ++byte)
+    {
+        if (*byte)
+            *encode++ = *byte, ++code;
+
+        if (!*byte || code == 0xff)
+        {
+            *codep = code, code = 1, codep = encode;
+            if (!*byte || length)
+                ++encode;
+        }
+    }
+    *codep = code;
+    return (size_t)(encode - buffer);
+}
+
+size_t cobsDecode(const uint8_t *buffer, size_t length, void *data)
+{
+    assert(buffer && data);
+    const uint8_t *byte = buffer;
+    uint8_t *decode = (uint8_t *)data;
+
+    for (uint8_t code = 0xff, block = 0; byte < buffer + length; --block)
+    {
+        if (block)
+            *decode++ = *byte++;
+        else
+        {
+            block = *byte++;
+            if (block && (code != 0xff))
+                *decode++ = 0;
+            code = block;
+            if (!code)
+                break;
+        }
+    }
+    return (size_t)(decode - (uint8_t *)data);
+}
+
+size_t decodeCOBSToCharBuffer(const uint8_t *encodedData, size_t encodedSize, char *outputBuffer, size_t bufferSize)
+{
+    if (!encodedData || !outputBuffer || encodedSize == 0 || bufferSize == 0)
+    {
+        return 0; // Evitar errores por punteros nulos o buffers vacíos
+    }
+
+    // Decodificar los datos en el buffer de salida
+    size_t decodedSize = cobsDecode(encodedData, encodedSize, (uint8_t *)outputBuffer);
+
+    // Verificar que no se desborde el buffer
+    if (decodedSize >= bufferSize)
+    {
+        return 0; // Error: el mensaje es demasiado grande
+    }
+
+    // Asegurar terminación de string
+    outputBuffer[decodedSize] = '\0';
+
+    return decodedSize;
 }
 /* USER CODE END PV */
 
@@ -321,9 +392,11 @@ Bool send_tx(){
 
 	if(tx_buffer_size != 0){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
+		//size_t encodedSize = cobsEncode(tx_buffer, tx_buffer_size, encodedBuffer);
+		//encodedBuffer[encodedSize] = 0; // Agregar delimitador COBS (0x00)
+		//HAL_UART_Transmit_DMA(&huart2,encodedBuffer,encodedSize);
 		time_tx = HAL_GetTick();
 		flag_tx_not_ok = 1;
-		//HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 		return 1;
 	}
 	return 0;
@@ -338,6 +411,32 @@ void update_buffer(char *buffer, size_t buffer_size, const char *new_content) {
 
     strncpy(buffer, new_content, buffer_size - 1); // Protege contra desbordamientos
     buffer[buffer_size - 1] = '\0'; // Asegura la terminación nula
+}
+
+void update_buffer_for_cipsend(char *buffer, size_t buffer_size, int cipsend_length) {
+    memset(buffer, 0, buffer_size);
+    sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", cipsend_length);
+}
+
+void update_buffer_for_BME(char *buffer, size_t buffer_size) {
+    memset(buffer, 0, buffer_size);
+    sprintf(buffer, "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
+}
+
+void update_buffer_SLIP(char *buffer, size_t buffer_size, const char *new_content) {
+    memset(buffer, 0, buffer_size);
+
+    size_t content_len = strlen(new_content);
+    size_t max_copy_size = buffer_size - 2; // Reservar espacio para los delimitadores SLIP
+
+    // Agregar el byte de inicio de SLIP (0xC0)
+    buffer[0] = 0xC0;
+
+    // Copiar contenido al buffer, asegurando que no exceda el tamaño disponible
+    strncpy(&buffer[1], new_content, max_copy_size);
+
+    // Agregar el byte de fin de SLIP (0xC0)
+    buffer[content_len + 1] = 0xC0;
 }
 
 Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_wifi_com_status){
@@ -380,7 +479,7 @@ void task_handling(response_t response){
 			break; // Salir del bucle interno si se encuentra una coincidencia
 		}
 	}
-	if((flag_cipsend == 1)&&(response == ERR)){
+	if((flag_cipsend == 1)&&(response == ERR)){ // Por si no llega el SEND OK
 		flag_cipsend = 0;
 	}
 	switch(task){
@@ -392,17 +491,13 @@ void task_handling(response_t response){
 			flag_read_bme280 = 1;
 			printf("Antes del READ_BME280 el milisegundo de programa es %lu\n", HAL_GetTick());
 			BME280_Measure();
-			memset(data_to_send, 0, BUFFER_SIZE);
-			sprintf(data_to_send, "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
-			data_lentgh = strlen(data_to_send);
-			memset(tx_buffer, 0, BUFFER_SIZE);
-			sprintf(tx_buffer, "AT+CIPSEND=%d\r\n", data_lentgh);
+			update_buffer_for_BME(data_to_send, BUFFER_SIZE);
+			update_buffer_for_cipsend(tx_buffer, BUFFER_SIZE, strlen(data_to_send));
 			break;
 		case CIPSEND_TASK:
 			if(flag_cipsend == 0){
 				flag_cipsend = 1;
-				memset(tx_buffer, 0, BUFFER_SIZE);
-				strcpy(tx_buffer, data_to_send);
+				update_buffer(tx_buffer, BUFFER_SIZE, data_to_send);
 			}
 			if(response == SEND_OK){
 				printf("Ha llegado SEND OK\n");
@@ -511,9 +606,7 @@ int main(void)
     	send_tx();
     }
     if((flag_cipsend == 1)){
-    	delay = HAL_GetTick();
-    	memset(tx_buffer, 0, BUFFER_SIZE);
-    	strcpy(tx_buffer, data_to_send);
+    	update_buffer(tx_buffer, BUFFER_SIZE, data_to_send);
     	HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,strlen(tx_buffer), 1000);
     	memset(tx_buffer, 0, BUFFER_SIZE);
     	printf("Tras el cipsend el milisegundo de programa es %lu\n", HAL_GetTick());
