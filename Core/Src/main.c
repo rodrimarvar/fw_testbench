@@ -26,10 +26,10 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <malloc.h>
 #include <math.h>
 #include "BME280_STM32.h"
-#include "cobs.h"
 #include <assert.h>
 /* USER CODE END Includes */
 
@@ -169,7 +169,7 @@ volatile Bool flag_receive = 0;
 
 response_t response_global;
 
-volatile uint8_t encodedBuffer[BUFFER_SIZE];
+uint8_t encoded_tx_buffer[BUFFER_SIZE];
 volatile char rx_buffer[BUFFER_SIZE]; //buffer unico de recepcion
 char tx_buffer[BUFFER_SIZE]; //buffer de tranmisión que al menos para la conexion es unico para la transmitir datos
 char data_to_send[BUFFER_SIZE];//Guardamos las cadenas que queramos enviar con datos de sensores
@@ -202,8 +202,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	}
 	else if (Size > 0) {
     	if(overflow_start > Size){
-    		//printf("overflow start %d\n", overflow_start);
-    		//size_t decodedSize = decodeCOBSToCharBuffer(rx_buffer, BUFFER_SIZE, decodedBuffer, BUFFER_SIZE);
     		copy_and_process_message(overflow_start, BUFFER_SIZE, 1);
     		head = 0;
     	}
@@ -236,7 +234,7 @@ void copy_and_process_message(uint16_t start, uint16_t end, Bool overflow) {
 
     if(overflow == 0){
     	count++;
-    	//printf("\nterminado %d\n", count);
+    	printf("\nterminado %d\n", count);
     	message_buffer[index] = '\0';  // Finalizar la cadena
     	if(strlen(message_buffer) != 0){
     		process_message_lines(message_buffer); // Procesar el mensaje línea por línea
@@ -282,49 +280,15 @@ size_t cobsEncode(const void *data, size_t length, uint8_t *buffer)
     return (size_t)(encode - buffer);
 }
 
-size_t cobsDecode(const uint8_t *buffer, size_t length, void *data)
-{
-    assert(buffer && data);
-    const uint8_t *byte = buffer;
-    uint8_t *decode = (uint8_t *)data;
-
-    for (uint8_t code = 0xff, block = 0; byte < buffer + length; --block)
-    {
-        if (block)
-            *decode++ = *byte++;
-        else
-        {
-            block = *byte++;
-            if (block && (code != 0xff))
-                *decode++ = 0;
-            code = block;
-            if (!code)
-                break;
-        }
+void update_buffer_cobs(uint8_t *encoded_tx_buffer, size_t buffer_size, const char *tx_buffer) {
+    memset(encoded_tx_buffer, 0, buffer_size);
+    size_t tx_length = strlen(tx_buffer);
+    cobsEncode(tx_buffer, tx_length, encoded_tx_buffer);
+    printf("Mensaje codificado en COBS: ");
+    for(size_t i = 0; i < tx_length; i++) {
+    	printf("%02X ", encoded_tx_buffer[i]);
     }
-    return (size_t)(decode - (uint8_t *)data);
-}
-
-size_t decodeCOBSToCharBuffer(const uint8_t *encodedData, size_t encodedSize, char *outputBuffer, size_t bufferSize)
-{
-    if (!encodedData || !outputBuffer || encodedSize == 0 || bufferSize == 0)
-    {
-        return 0; // Evitar errores por punteros nulos o buffers vacíos
-    }
-
-    // Decodificar los datos en el buffer de salida
-    size_t decodedSize = cobsDecode(encodedData, encodedSize, (uint8_t *)outputBuffer);
-
-    // Verificar que no se desborde el buffer
-    if (decodedSize >= bufferSize)
-    {
-        return 0; // Error: el mensaje es demasiado grande
-    }
-
-    // Asegurar terminación de string
-    outputBuffer[decodedSize] = '\0';
-
-    return decodedSize;
+    printf("\n");
 }
 /* USER CODE END PV */
 
@@ -388,13 +352,8 @@ void print_state(Conection_State_t state) {
 
 Bool send_tx(){
 	tx_buffer_size = strlen(tx_buffer);
-	//printf("send_tx() %s",tx_buffer);
-
 	if(tx_buffer_size != 0){
 		HAL_UART_Transmit_DMA(&huart2,(uint8_t *)tx_buffer,tx_buffer_size);
-		//size_t encodedSize = cobsEncode(tx_buffer, tx_buffer_size, encodedBuffer);
-		//encodedBuffer[encodedSize] = 0; // Agregar delimitador COBS (0x00)
-		//HAL_UART_Transmit_DMA(&huart2,encodedBuffer,encodedSize);
 		time_tx = HAL_GetTick();
 		flag_tx_not_ok = 1;
 		return 1;
@@ -423,22 +382,6 @@ void update_buffer_for_BME(char *buffer, size_t buffer_size) {
     sprintf(buffer, "Temp: %.2f C, Press: %.2f Pa, Hum: %.2f\r\n", Temperature, Pressure, Humidity);
 }
 
-void update_buffer_SLIP(char *buffer, size_t buffer_size, const char *new_content) {
-    memset(buffer, 0, buffer_size);
-
-    size_t content_len = strlen(new_content);
-    size_t max_copy_size = buffer_size - 2; // Reservar espacio para los delimitadores SLIP
-
-    // Agregar el byte de inicio de SLIP (0xC0)
-    buffer[0] = 0xC0;
-
-    // Copiar contenido al buffer, asegurando que no exceda el tamaño disponible
-    strncpy(&buffer[1], new_content, max_copy_size);
-
-    // Agregar el byte de fin de SLIP (0xC0)
-    buffer[content_len + 1] = 0xC0;
-}
-
 Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_wifi_com_status){
 	update_buffer(tx_buffer, BUFFER_SIZE,(*current_wifi_com_status)->command);
 	for(size_t i = 0;i < (*current_wifi_com_status)->num_responses;i++){
@@ -447,10 +390,6 @@ Bool handle_wifi_card_state(response_t response, com_state_wifi_card **current_w
 			for(size_t k = 0; k < (sizeof(com_wifi_card_values)/sizeof(com_state_wifi_card));k++){
 				if((*current_wifi_com_status)->next_state[i]== com_wifi_card_values[k].state){
 					match=1;
-					//printf("Estado actual\n");
-					print_state((*current_wifi_com_status)->state);
-					//printf("Estado proximo\n");
-					print_state((*current_wifi_com_status)->next_state[i]);
 					if((response == SERVER_CLOSED)||(response == CLOSE_FROM_PC)){
 						flag_close_server = 1;
 					}
@@ -498,6 +437,7 @@ void task_handling(response_t response){
 			if(flag_cipsend == 0){
 				flag_cipsend = 1;
 				update_buffer(tx_buffer, BUFFER_SIZE, data_to_send);
+				update_buffer_cobs(encoded_tx_buffer, BUFFER_SIZE, tx_buffer);
 			}
 			if(response == SEND_OK){
 				printf("Ha llegado SEND OK\n");
@@ -607,7 +547,8 @@ int main(void)
     }
     if((flag_cipsend == 1)){
     	update_buffer(tx_buffer, BUFFER_SIZE, data_to_send);
-    	HAL_UART_Transmit(&huart2,(uint8_t *)tx_buffer,strlen(tx_buffer), 1000);
+    	update_buffer_cobs(encoded_tx_buffer, BUFFER_SIZE, tx_buffer);
+    	HAL_UART_Transmit(&huart2, encoded_tx_buffer,strlen(tx_buffer), 1000);
     	memset(tx_buffer, 0, BUFFER_SIZE);
     	printf("Tras el cipsend el milisegundo de programa es %lu\n", HAL_GetTick());
     }
