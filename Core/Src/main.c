@@ -215,7 +215,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 	if(huart->Instance == USART2){
 		//printf("\nEnviado\n");
-		flag_tx_not_ok = 0;
+		flag_tx_not_ok = 0;//incluir en send_tx()
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
 }
