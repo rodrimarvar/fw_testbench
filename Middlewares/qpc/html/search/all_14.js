@@ -1,0 +1,6 @@
+var searchData=
+[
+  ['kernel_0',['Kernel',['../srs-qp_qv.html',1,'Non-Preemptive Kernel'],['../arm-cm_qv.html',1,'Non-preemptive QV Kernel'],['../arm-cm_qxk.html',1,'Preemptive &quot;Dual-Mode&quot; QXK Kernel'],['../srs-qp_qxk.html',1,'Preemptive Dual-Mode Kernel'],['../srs-qp_qk.html',1,'Preemptive Non-Blocking Kernel'],['../arm-cm_qk.html',1,'Preemptive Non-Blocking QK Kernel'],['../api.html#api_qk',1,'QK (Preemptive RTC Kernel)'],['../srs-qp_qk.html#srs-qp_qk-def',1,'QK Preemptive Non-Blocking Kernel'],['../api.html#api_qv',1,'QV (Non-preemptive Kernel)'],['../srs-qp_qv.html#srs-qp_qv-def',1,'QV Non-Preemptive Kernel'],['../api.html#api_qxk',1,'QXK (Dual-Mode Kernel)'],['../srs-qp_qxk.html#srs-qp_qxk-def',1,'QXK Dual-Mode Kernel'],['../srs-qp_qk.html#srs-qp_qk-stack',1,'Single-Stack Kernel']]],
+  ['kernel_20initialization_20and_20control_1',['Kernel Initialization and Control',['../api.html#api_qv_init',1,'Kernel Initialization and Control'],['../api.html#api_qk_ctrl',1,'Kernel Initialization and Control'],['../api.html#api_qxk_ctrl',1,'Kernel Initialization and Control']]],
+  ['kernels_2',['Kernels',['../index.html#over_3rd-party',1,'3rd-Party Kernels'],['../index.html#over_kernels',1,'Built-in Kernels'],['../ports_native.html',1,'Native Ports (Built-in Kernels)']]]
+];

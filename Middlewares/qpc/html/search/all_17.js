@@ -1,0 +1,28 @@
+var searchData=
+[
+  ['n_20shoot_20game_0',['&quot;Fly &apos;n&apos; Shoot&quot; Game',['../tut_game.html',1,'gs_tut']]],
+  ['native_20examples_1',['Native Examples',['../exa.html#exa_native',1,'']]],
+  ['native_20ports_20built_20in_20kernels_2',['Native Ports (Built-in Kernels)',['../ports_native.html',1,'ports']]],
+  ['needed_20in_20this_20qp_20c_20port_3',['Needed in this QP C Port',['../embos.html#embos_build',1,'QP/C Source Files Needed in this QP/C Port'],['../threadx.html#threadx_build',1,'QP/C Source Files Needed in this QP/C Port']]],
+  ['next_4',['next',['../struct_q_time_evt.html#a0af89bee26e0c6f89e7006904bb27c2c',1,'QTimeEvt']]],
+  ['next_20steps_20and_20further_20reading_20about_20qp_20and_20qm_5',['Next Steps and Further Reading About QP and QM',['../exa.html#exa_doc',1,'']]],
+  ['nextprio_6',['nextPrio',['../struct_q_k___attr.html#acebde316be1c00b6d3cd95948f8d7e8d',1,'QK_Attr']]],
+  ['nfree_7',['nFree',['../struct_q_e_queue.html#a7334a9abfa37337eadbc276a3b992812',1,'QEQueue::nFree'],['../struct_q_m_pool.html#a463f7c9b346c1e4fa67f0fba662fcf5b',1,'QMPool::nFree']]],
+  ['nmin_8',['nMin',['../struct_q_e_queue.html#a5d8963f8b58527c31cc5c88203453de1',1,'QEQueue::nMin'],['../struct_q_m_pool.html#a661dfb0f9495c37b30c89fca86e8175e',1,'QMPool::nMin']]],
+  ['no_20blocking_9',['No Blocking',['../srs-qp_ao.html#srs-qp_ao-block',1,'']]],
+  ['non_20blocking_20kernel_10',['Non Blocking Kernel',['../srs-qp_qk.html',1,'Preemptive Non-Blocking Kernel'],['../srs-qp_qk.html#srs-qp_qk-def',1,'QK Preemptive Non-Blocking Kernel']]],
+  ['non_20blocking_20qk_20kernel_11',['Preemptive Non-Blocking QK Kernel',['../arm-cm_qk.html',1,'arm-cm']]],
+  ['non_20functional_20requirements_12',['Non-Functional Requirements',['../srs-qp_nf.html',1,'srs-qp']]],
+  ['non_20preemptive_20kernel_13',['Non Preemptive Kernel',['../srs-qp_qv.html',1,'Non-Preemptive Kernel'],['../srs-qp_qv.html#srs-qp_qv-def',1,'QV Non-Preemptive Kernel']]],
+  ['non_20preemptive_20kernel_14',['QV (Non-preemptive Kernel)',['../api.html#api_qv',1,'']]],
+  ['non_20preemptive_20qv_20kernel_15',['Non-preemptive QV Kernel',['../arm-cm_qv.html',1,'arm-cm']]],
+  ['not_16',['Use of &quot;shall not&quot;',['../srs-qp.html#srs-qp_conv-shall-not',1,'']]],
+  ['not_20a_20library_17',['Framework, NOT a Library',['../srs-qp_over.html#srs-qp_over_frame',1,'']]],
+  ['nothing_20principle_18',['Shared-Nothing Principle',['../srs-qp_ao.html#srs-qp_ao-sharing',1,'']]],
+  ['nov_2001_202010_19',['Version 4.1.05, Nov 01, 2010',['../history.html#qpc_4_1_05',1,'']]],
+  ['nov_2001_202011_20',['Version 4.3.00, Nov 01, 2011',['../history.html#qpc_4_3_00',1,'']]],
+  ['nov_2005_202009_21',['Version 4.1.01, Nov 05, 2009',['../history.html#qpc_4_1_01',1,'']]],
+  ['nov_2015_202008_22',['Version 4.0.02, Nov 15, 2008',['../history.html#qpc_4_0_02',1,'']]],
+  ['nov_2027_202012_23',['Version 4.5.03, Nov 27, 2012',['../history.html#qpc_4_5_03',1,'']]],
+  ['ntot_24',['nTot',['../struct_q_m_pool.html#af0ffe3837793955c37bdb0587f365556',1,'QMPool']]]
+];
