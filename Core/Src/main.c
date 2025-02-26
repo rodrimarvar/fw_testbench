@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include<bsp.h>
 #include<stdio.h>
 #include<string.h>
 /* USER CODE END Includes */
@@ -104,7 +105,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  QF_init();  // initialize the framework and the underlying RT kernel
+  BSP_init();   // initialize the BSP
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -129,7 +131,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  BSP_start();  // start the AOs/Threads
+  QF_run();     // run the QF application
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -474,7 +477,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 1, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
 }

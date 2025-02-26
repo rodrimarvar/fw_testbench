@@ -33,9 +33,10 @@
 									<listOptionValue builtIn="false" value="DEBUG"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.includepaths.283405630" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.includepaths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/qk/gnu}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/config}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/include}&quot;"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/qk/gnu"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/include"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/config"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/qm}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.1454377286" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -46,6 +47,7 @@
 									<listOptionValue builtIn="false" value="DEBUG"/>
 									<listOptionValue builtIn="false" value="USE_HAL_DRIVER"/>
 									<listOptionValue builtIn="false" value="STM32F411xE"/>
+									<listOptionValue builtIn="false" value="QF_USE_BASEPRI=0x3f"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1873374648" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../USB_HOST/App"/>
@@ -57,9 +59,10 @@
 									<listOptionValue builtIn="false" value="../Middlewares/ST/STM32_USB_Host_Library/Class/CDC/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/qk/gnu}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/config}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/include}&quot;"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/qk/gnu"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/config"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/qm}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.688458883" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -86,10 +89,11 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="qpc/src/qv|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/iar|qpc/ports/arm-cm/qk/armclang|qpc/ports/config|qpc/ports/zephyr|qpc/ports/win32-qv|qpc/ports/win32|qpc/ports/uc-os2|qpc/ports/threadx|qpc/ports/risc-v|qpc/ports/qube|qpc/ports/qep-only|qpc/ports/posix-qv|qpc/ports/posix|qpc/ports/msp430|qpc/ports/freertos|qpc/ports/embos|qpc/ports/arm-cr|qpc/zephyr|qpc/LICENSES|qpc/html|qpc/examples|qpc/3rd_party" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="qpc/ports/qube|qpc/3rd_party|qpc/ports/threadx|qpc/ports/freertos|qpc/ports/zephyr|qpc/ports/qep-only|qpc/LICENSES|qpc/zephyr|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/armclang|qpc/ports/uc-os2|qpc/ports/arm-cr|qpc/ports/win32-qv|qpc/ports/embos|qpc/ports/posix-qv|qpc/ports/config|qpc/ports/msp430|qpc/ports/arm-cm/qk/iar|qpc/ports/posix|qpc/html|qpc/ports/risc-v|qpc/examples|qpc/src/qv|qpc/ports/win32" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
+						<entry flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="qm"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -124,9 +128,10 @@
 							<tool id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.144279613" name="MCU/MPU GCC Assembler" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler">
 								<option id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel.908744701" name="Debug level" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel" value="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.debuglevel.value.g0" valueType="enumerated"/>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.includepaths.1641715259" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.option.includepaths" valueType="includePath">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/qk/gnu}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/config}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/include}&quot;"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/qk/gnu"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/include"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/config"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/qm}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input.1481901023" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.assembler.input"/>
 							</tool>
@@ -136,6 +141,7 @@
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.definedsymbols.768897608" name="Define symbols (-D)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.definedsymbols" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="USE_HAL_DRIVER"/>
 									<listOptionValue builtIn="false" value="STM32F411xE"/>
+									<listOptionValue builtIn="false" value="QF_USE_BASEPRI=4"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.169828185" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../USB_HOST/App"/>
@@ -147,9 +153,10 @@
 									<listOptionValue builtIn="false" value="../Middlewares/ST/STM32_USB_Host_Library/Class/CDC/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/qk/gnu}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/ports/arm-cm/config}&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Middlewares/qpc/include}&quot;"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/qk/gnu"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/ports/arm-cm/config"/>
+									<listOptionValue builtIn="false" value="../Middlewares/qpc/include"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/qm}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1423860732" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -176,10 +183,10 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="qpc/src/qv|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/iar|qpc/ports/arm-cm/qk/armclang|qpc/ports/config|qpc/ports/zephyr|qpc/ports/win32-qv|qpc/ports/win32|qpc/ports/uc-os2|qpc/ports/threadx|qpc/ports/risc-v|qpc/ports/qube|qpc/ports/qep-only|qpc/ports/posix-qv|qpc/ports/posix|qpc/ports/msp430|qpc/ports/freertos|qpc/ports/embos|qpc/ports/arm-cr|qpc/zephyr|qpc/LICENSES|qpc/html|qpc/examples|qpc/3rd_party" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="qpc/ports/qube|qpc/3rd_party|qpc/ports/threadx|qpc/ports/freertos|qpc/ports/zephyr|qpc/ports/qep-only|qpc/LICENSES|qpc/zephyr|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/armclang|qpc/ports/uc-os2|qpc/ports/arm-cr|qpc/ports/win32-qv|qpc/ports/embos|qpc/ports/posix-qv|qpc/ports/config|qpc/ports/msp430|qpc/ports/arm-cm/qk/iar|qpc/ports/posix|qpc/html|qpc/ports/risc-v|qpc/examples|qpc/src/qv|qpc/ports/win32" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -201,5 +208,12 @@
 			<autodiscovery enabled="false" problemReportingEnabled="true" selectedProfileId=""/>
 		</scannerConfigBuildInfo>
 	</storageModule>
-	<storageModule moduleId="refreshScope"/>
+	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="Debug">
+			<resource resourceType="PROJECT" workspacePath="/fw_testbench"/>
+		</configuration>
+		<configuration configurationName="Release">
+			<resource resourceType="PROJECT" workspacePath="/fw_testbench"/>
+		</configuration>
+	</storageModule>
 </cproject>
