@@ -34,7 +34,7 @@ https://www.state-machine.com/qpc/exa.html</documentation>
   <!--${Shared::BlinkySignals}-->
   <attribute name="BlinkySignals" type="enum" visibility="0x04" properties="0x00">
    <code>{
-    TIMEOUT_SIG = Q_USER_SIG,
+    TIMEOUT_SIG = Q_USER_SIG, PA0_SIG, MAX_SIG
 };</code>
   </attribute>
   <!--${Shared::AO_Blinky}-->
@@ -64,38 +64,132 @@ QTimeEvt_ctorX(&amp;me-&gt;timeEvt, &amp;me-&gt;super, TIMEOUT_SIG, 0U);</code>
     <initial target="../1">
      <action>(void)par; // unused parameter
 QTimeEvt_armX(&amp;me-&gt;timeEvt,
-BSP_TICKS_PER_SEC/2, BSP_TICKS_PER_SEC/2);</action>
-     <initial_glyph color="3" conn="2,3,5,1,20,6,-4">
-      <action box="0,-2,6,2"/>
+BSP_TICKS_PER_SEC/10, BSP_TICKS_PER_SEC/10);</action>
+     <initial_glyph color="3" conn="4,2,4,0,6,10,2">
+      <action box="0,-2,25,7"/>
      </initial_glyph>
     </initial>
-    <!--${AOs::Blinky::SM::off}-->
-    <state name="off">
-     <entry>BSP_ledOff();</entry>
-     <!--${AOs::Blinky::SM::off::TIMEOUT}-->
-     <tran trig="TIMEOUT" target="../../2">
-      <tran_glyph color="1" conn="2,16,3,1,18,7,-2">
-       <action box="0,-2,8,2"/>
+    <!--${AOs::Blinky::SM::seq1}-->
+    <state name="seq1">
+     <!--${AOs::Blinky::SM::seq1::initial}-->
+     <initial target="../2">
+      <action>BSP_ledOff(BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);</action>
+      <initial_glyph color="3" conn="6,20,5,3,4">
+       <action box="0,-2,10,2"/>
+      </initial_glyph>
+     </initial>
+     <!--${AOs::Blinky::SM::seq1::PA0}-->
+     <tran trig="PA0" target="../../2">
+      <tran_glyph color="1" conn="54,18,1,3,8">
+       <action box="3,-2,10,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph node="2,6,16,12">
-      <entry box="0,3,16,4"/>
-     </state_glyph>
+     <!--${AOs::Blinky::SM::seq1::west}-->
+     <state name="west">
+      <entry>BSP_ledOn(BSP_RED_LED);</entry>
+      <exit>BSP_ledOff(BSP_RED_LED);</exit>
+      <!--${AOs::Blinky::SM::seq1::west::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../5">
+       <tran_glyph color="1" conn="18,26,2,0,8">
+        <action box="0,1,8,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph color="1" node="10,14,16,12">
+       <entry box="0,3,16,4"/>
+       <exit box="0,7,16,3"/>
+      </state_glyph>
+     </state>
+     <!--${AOs::Blinky::SM::seq1::east}-->
+     <state name="east">
+      <entry>BSP_ledOn(BSP_GREEN_LED);</entry>
+      <exit>BSP_ledOff(BSP_GREEN_LED);</exit>
+      <!--${AOs::Blinky::SM::seq1::east::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../4">
+       <tran_glyph color="1" conn="43,34,0,2,-8">
+        <action box="0,-2,10,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="34,34,18,12">
+       <entry box="0,3,18,4"/>
+       <exit box="0,7,18,4"/>
+      </state_glyph>
+     </state>
+     <!--${AOs::Blinky::SM::seq1::south}-->
+     <state name="south">
+      <entry>BSP_ledOn(BSP_BLUE_LED);</entry>
+      <exit>BSP_ledOff(BSP_BLUE_LED);</exit>
+      <!--${AOs::Blinky::SM::seq1::south::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../2">
+       <tran_glyph color="1" conn="34,18,3,1,-8">
+        <action box="-7,-2,10,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="34,14,18,12">
+       <entry box="0,3,18,4"/>
+       <exit box="0,7,18,4"/>
+      </state_glyph>
+     </state>
+     <!--${AOs::Blinky::SM::seq1::north}-->
+     <state name="north">
+      <entry>BSP_ledOn(BSP_ORANGE_LED);</entry>
+      <exit>BSP_ledOff(BSP_ORANGE_LED);</exit>
+      <!--${AOs::Blinky::SM::seq1::north::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../3">
+       <tran_glyph color="1" conn="26,40,1,3,8">
+        <action box="0,-2,8,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="10,34,16,12">
+       <entry box="0,3,16,4"/>
+       <exit box="0,7,16,3"/>
+      </state_glyph>
+     </state>
+     <state_glyph color="1" node="4,10,50,40"/>
     </state>
-    <!--${AOs::Blinky::SM::on}-->
-    <state name="on">
-     <entry>BSP_ledOn();</entry>
-     <!--${AOs::Blinky::SM::on::TIMEOUT}-->
-     <tran trig="TIMEOUT" target="../../1">
-      <tran_glyph color="1" conn="2,30,3,1,20,-19,-4">
-       <action box="0,-2,8,2"/>
+    <!--${AOs::Blinky::SM::seq2}-->
+    <state name="seq2">
+     <!--${AOs::Blinky::SM::seq2::initial}-->
+     <initial target="../2">
+      <action>BSP_ledOff(BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);</action>
+      <initial_glyph color="3" conn="64,20,5,3,4">
+       <action box="0,-2,10,2"/>
+      </initial_glyph>
+     </initial>
+     <!--${AOs::Blinky::SM::seq2::PA0}-->
+     <tran trig="PA0" target="../../1">
+      <tran_glyph color="1" conn="62,22,3,1,-8">
+       <action box="-5,-2,10,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph color="2" node="2,20,16,12">
-      <entry box="0,3,16,4"/>
-     </state_glyph>
+     <!--${AOs::Blinky::SM::seq2::on}-->
+     <state name="on">
+      <entry>BSP_ledOn(BSP_RED_LED|BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);</entry>
+      <!--${AOs::Blinky::SM::seq2::on::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../3">
+       <tran_glyph color="1" conn="84,18,1,3,10">
+        <action box="1,-2,8,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph color="1" node="68,14,16,12">
+       <entry box="0,3,16,4"/>
+      </state_glyph>
+     </state>
+     <!--${AOs::Blinky::SM::seq2::off}-->
+     <state name="off">
+      <entry>BSP_ledOff(BSP_RED_LED|BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);</entry>
+      <!--${AOs::Blinky::SM::seq2::off::TIMEOUT}-->
+      <tran trig="TIMEOUT" target="../../2">
+       <tran_glyph color="1" conn="94,22,3,1,-10">
+        <action box="-9,-2,8,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="94,14,16,12">
+       <entry box="0,3,16,6"/>
+      </state_glyph>
+     </state>
+     <state_glyph node="62,10,50,18"/>
     </state>
-    <state_diagram size="30,34"/>
+    <state_diagram size="120,54"/>
    </statechart>
   </class>
  </package>

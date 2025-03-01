@@ -514,8 +514,8 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, ESP01_RST_Pin|ESP01_EN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, LD5_Pin|LD6_Pin|LD7_Pin|LD8_Pin
-                          |LD4_Pin|LD3_Pin|LD5D14_Pin|LD6D15_Pin
+  HAL_GPIO_WritePin(GPIOD, LD7_Pin|LD8_Pin|LD9_Pin|LD10_Pin
+                          |LD4_Pin|LD3_Pin|LD5_Pin|LD6_Pin
                           |Audio_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : DATA_Ready_Pin */
@@ -544,11 +544,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
+  /*Configure GPIO pin : PA0_Pin */
+  GPIO_InitStruct.Pin = PA0_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_GPIO_Init(PA0_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ESP01_RST_Pin ESP01_EN_Pin */
   GPIO_InitStruct.Pin = ESP01_RST_Pin|ESP01_EN_Pin;
@@ -557,11 +557,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD5_Pin LD6_Pin LD7_Pin LD8_Pin
-                           LD4_Pin LD3_Pin LD5D14_Pin LD6D15_Pin
+  /*Configure GPIO pins : LD7_Pin LD8_Pin LD9_Pin LD10_Pin
+                           LD4_Pin LD3_Pin LD5_Pin LD6_Pin
                            Audio_RST_Pin */
-  GPIO_InitStruct.Pin = LD5_Pin|LD6_Pin|LD7_Pin|LD8_Pin
-                          |LD4_Pin|LD3_Pin|LD5D14_Pin|LD6D15_Pin
+  GPIO_InitStruct.Pin = LD7_Pin|LD8_Pin|LD9_Pin|LD10_Pin
+                          |LD4_Pin|LD3_Pin|LD5_Pin|LD6_Pin
                           |Audio_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -573,6 +573,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 13, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

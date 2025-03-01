@@ -67,27 +67,33 @@ QState Blinky_initial(Blinky * const me, void const * const par) {
     //${AOs::Blinky::SM::initial}
     (void)par; // unused parameter
     QTimeEvt_armX(&me->timeEvt,
-    BSP_TICKS_PER_SEC/2, BSP_TICKS_PER_SEC/2);
+    BSP_TICKS_PER_SEC/10, BSP_TICKS_PER_SEC/10);
 
-    QS_FUN_DICTIONARY(&Blinky_off);
+    QS_FUN_DICTIONARY(&Blinky_seq1);
+    QS_FUN_DICTIONARY(&Blinky_west);
+    QS_FUN_DICTIONARY(&Blinky_east);
+    QS_FUN_DICTIONARY(&Blinky_south);
+    QS_FUN_DICTIONARY(&Blinky_north);
+    QS_FUN_DICTIONARY(&Blinky_seq2);
     QS_FUN_DICTIONARY(&Blinky_on);
+    QS_FUN_DICTIONARY(&Blinky_off);
 
-    return Q_TRAN(&Blinky_off);
+    return Q_TRAN(&Blinky_seq1);
 }
 
-//${AOs::Blinky::SM::off} ....................................................
-QState Blinky_off(Blinky * const me, QEvt const * const e) {
+//${AOs::Blinky::SM::seq1} ...................................................
+QState Blinky_seq1(Blinky * const me, QEvt const * const e) {
     QState status_;
     switch (e->sig) {
-        //${AOs::Blinky::SM::off}
-        case Q_ENTRY_SIG: {
-            BSP_ledOff();
-            status_ = Q_HANDLED();
+        //${AOs::Blinky::SM::seq1::initial}
+        case Q_INIT_SIG: {
+            BSP_ledOff(BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);
+            status_ = Q_TRAN(&Blinky_west);
             break;
         }
-        //${AOs::Blinky::SM::off::TIMEOUT}
-        case TIMEOUT_SIG: {
-            status_ = Q_TRAN(&Blinky_on);
+        //${AOs::Blinky::SM::seq1::PA0}
+        case PA0_SIG: {
+            status_ = Q_TRAN(&Blinky_seq2);
             break;
         }
         default: {
@@ -98,23 +104,185 @@ QState Blinky_off(Blinky * const me, QEvt const * const e) {
     return status_;
 }
 
-//${AOs::Blinky::SM::on} .....................................................
-QState Blinky_on(Blinky * const me, QEvt const * const e) {
+//${AOs::Blinky::SM::seq1::west} .............................................
+QState Blinky_west(Blinky * const me, QEvt const * const e) {
     QState status_;
     switch (e->sig) {
-        //${AOs::Blinky::SM::on}
+        //${AOs::Blinky::SM::seq1::west}
         case Q_ENTRY_SIG: {
-            BSP_ledOn();
+            BSP_ledOn(BSP_RED_LED);
             status_ = Q_HANDLED();
             break;
         }
-        //${AOs::Blinky::SM::on::TIMEOUT}
+        //${AOs::Blinky::SM::seq1::west}
+        case Q_EXIT_SIG: {
+            BSP_ledOff(BSP_RED_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::west::TIMEOUT}
+        case TIMEOUT_SIG: {
+            status_ = Q_TRAN(&Blinky_north);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&Blinky_seq1);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq1::east} .............................................
+QState Blinky_east(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq1::east}
+        case Q_ENTRY_SIG: {
+            BSP_ledOn(BSP_GREEN_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::east}
+        case Q_EXIT_SIG: {
+            BSP_ledOff(BSP_GREEN_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::east::TIMEOUT}
+        case TIMEOUT_SIG: {
+            status_ = Q_TRAN(&Blinky_south);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&Blinky_seq1);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq1::south} ............................................
+QState Blinky_south(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq1::south}
+        case Q_ENTRY_SIG: {
+            BSP_ledOn(BSP_BLUE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::south}
+        case Q_EXIT_SIG: {
+            BSP_ledOff(BSP_BLUE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::south::TIMEOUT}
+        case TIMEOUT_SIG: {
+            status_ = Q_TRAN(&Blinky_west);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&Blinky_seq1);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq1::north} ............................................
+QState Blinky_north(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq1::north}
+        case Q_ENTRY_SIG: {
+            BSP_ledOn(BSP_ORANGE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::north}
+        case Q_EXIT_SIG: {
+            BSP_ledOff(BSP_ORANGE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq1::north::TIMEOUT}
+        case TIMEOUT_SIG: {
+            status_ = Q_TRAN(&Blinky_east);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&Blinky_seq1);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq2} ...................................................
+QState Blinky_seq2(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq2::initial}
+        case Q_INIT_SIG: {
+            BSP_ledOff(BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);
+            status_ = Q_TRAN(&Blinky_on);
+            break;
+        }
+        //${AOs::Blinky::SM::seq2::PA0}
+        case PA0_SIG: {
+            status_ = Q_TRAN(&Blinky_seq1);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&QHsm_top);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq2::on} ...............................................
+QState Blinky_on(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq2::on}
+        case Q_ENTRY_SIG: {
+            BSP_ledOn(BSP_RED_LED|BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq2::on::TIMEOUT}
         case TIMEOUT_SIG: {
             status_ = Q_TRAN(&Blinky_off);
             break;
         }
         default: {
-            status_ = Q_SUPER(&QHsm_top);
+            status_ = Q_SUPER(&Blinky_seq2);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Blinky::SM::seq2::off} ..............................................
+QState Blinky_off(Blinky * const me, QEvt const * const e) {
+    QState status_;
+    switch (e->sig) {
+        //${AOs::Blinky::SM::seq2::off}
+        case Q_ENTRY_SIG: {
+            BSP_ledOff(BSP_RED_LED|BSP_ORANGE_LED|BSP_GREEN_LED|BSP_BLUE_LED);
+            status_ = Q_HANDLED();
+            break;
+        }
+        //${AOs::Blinky::SM::seq2::off::TIMEOUT}
+        case TIMEOUT_SIG: {
+            status_ = Q_TRAN(&Blinky_on);
+            break;
+        }
+        default: {
+            status_ = Q_SUPER(&Blinky_seq2);
             break;
         }
     }

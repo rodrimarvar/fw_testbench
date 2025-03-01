@@ -60,10 +60,17 @@ enum KernelAwareISRs
 // "kernel-aware" interrupts should not overlap the PendSV priority
 Q_ASSERT_COMPILE(MAX_KERNEL_AWARE_CMSIS_PRI <= (0xFF>>(8-__NVIC_PRIO_BITS)));
 
+enum BSP_LEDId {
+    BSP_RED_LED = 0x01,
+    BSP_ORANGE_LED = 0x02,
+    BSP_GREEN_LED = 0x04,
+    BSP_BLUE_LED = 0x08
+};
+
 void BSP_init(void);
 void BSP_start(void);
 void BSP_terminate(int16_t result);
-void BSP_ledOn(void);
-void BSP_ledOff(void);
+void BSP_ledOn(int ledIds);
+void BSP_ledOff(int ledIds);
 
 #endif // BSP_H_INCLUDED

@@ -89,11 +89,11 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry excluding="qpc/ports/qube|qpc/3rd_party|qpc/ports/threadx|qpc/ports/freertos|qpc/ports/zephyr|qpc/ports/qep-only|qpc/LICENSES|qpc/zephyr|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/armclang|qpc/ports/uc-os2|qpc/ports/arm-cr|qpc/ports/win32-qv|qpc/ports/embos|qpc/ports/posix-qv|qpc/ports/config|qpc/ports/msp430|qpc/ports/arm-cm/qk/iar|qpc/ports/posix|qpc/html|qpc/ports/risc-v|qpc/examples|qpc/src/qv|qpc/ports/win32" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="qm"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -183,10 +183,10 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry excluding="qpc/ports/qube|qpc/3rd_party|qpc/ports/threadx|qpc/ports/freertos|qpc/ports/zephyr|qpc/ports/qep-only|qpc/LICENSES|qpc/zephyr|qpc/ports/arm-cm/qv|qpc/ports/arm-cm/qk/armclang|qpc/ports/uc-os2|qpc/ports/arm-cr|qpc/ports/win32-qv|qpc/ports/embos|qpc/ports/posix-qv|qpc/ports/config|qpc/ports/msp430|qpc/ports/arm-cm/qk/iar|qpc/ports/posix|qpc/html|qpc/ports/risc-v|qpc/examples|qpc/src/qv|qpc/ports/win32" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="USB_HOST"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

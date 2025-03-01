@@ -54,15 +54,21 @@ extern Blinky Blinky_inst;
 
 // protected:
 QState Blinky_initial(Blinky * const me, void const * const par);
-QState Blinky_off(Blinky * const me, QEvt const * const e);
+QState Blinky_seq1(Blinky * const me, QEvt const * const e);
+QState Blinky_west(Blinky * const me, QEvt const * const e);
+QState Blinky_east(Blinky * const me, QEvt const * const e);
+QState Blinky_south(Blinky * const me, QEvt const * const e);
+QState Blinky_north(Blinky * const me, QEvt const * const e);
+QState Blinky_seq2(Blinky * const me, QEvt const * const e);
 QState Blinky_on(Blinky * const me, QEvt const * const e);
+QState Blinky_off(Blinky * const me, QEvt const * const e);
 //$enddecl${AOs::Blinky} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 //$declare${Shared} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 //${Shared::BlinkySignals} ...................................................
 enum BlinkySignals {
-    TIMEOUT_SIG = Q_USER_SIG,
+    TIMEOUT_SIG = Q_USER_SIG, PA0_SIG, MAX_SIG
 };
 
 //${Shared::AO_Blinky} .......................................................

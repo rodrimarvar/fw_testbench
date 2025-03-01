@@ -59,6 +59,15 @@ void SysTick_Handler(void) {
     QK_ISR_EXIT();  // inform QK about exiting an ISR
 }
 
+void EXTI0_IRQHandler(void)
+{
+    QK_ISR_ENTRY();
+    HAL_GPIO_EXTI_IRQHandler(PA0_Pin);
+    static QEvt const serveEvt = QEVT_INITIALIZER(PA0_SIG);
+    QACTIVE_POST(&Blinky_inst, &serveEvt, NULL);
+    QK_ISR_EXIT();
+}
+
 //............................................................................
 #ifdef Q_SPY
 // ISR for receiving bytes from the QSPY Back-End
@@ -131,12 +140,27 @@ void BSP_start(void) {
         (void *)0);             // no initialization param
 }
 //............................................................................
-void BSP_ledOn(void) {
-    HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+void BSP_ledOn(int ledIds)
+{
+    if (ledIds & BSP_RED_LED)
+        HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, GPIO_PIN_SET);
+    if (ledIds & BSP_ORANGE_LED)
+        HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+    if (ledIds & BSP_GREEN_LED)
+        HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_SET);
+    if (ledIds & BSP_BLUE_LED)
+        HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, GPIO_PIN_SET);
 }
 //............................................................................
-void BSP_ledOff(void) {
-    HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+void BSP_ledOff(int ledIds) {
+    if (ledIds & BSP_RED_LED)
+        HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, GPIO_PIN_RESET);
+    if (ledIds & BSP_ORANGE_LED)
+        HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+    if (ledIds & BSP_GREEN_LED)
+        HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, GPIO_PIN_RESET);
+    if (ledIds & BSP_BLUE_LED)
+        HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, GPIO_PIN_RESET);
 }
 //............................................................................
 void BSP_terminate(int16_t result) {
