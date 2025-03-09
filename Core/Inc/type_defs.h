@@ -35,7 +35,8 @@ typedef enum{
 	TRYING_TO_CONNECT,
 	NO_TASK,
 	READ_BME280,
-	CIPSEND_TASK
+	CIPSEND_TASK,
+	SAMPLE_SENDING
 }task_t;
 
 typedef enum {
@@ -53,7 +54,9 @@ typedef enum {
 	FAIL,
 	CIPSTATE,
 	CLOSE_FROM_PC,
-	SEND_OK
+	SEND_OK,
+	START_SENDING_SAMPLES,
+	STOP_SENDING_SAMPLES
 }response_t; // Don't use ERROR the stm already uses it
 
 #endif /* INC_TYPE_DEFS_H_ */

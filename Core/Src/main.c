@@ -22,11 +22,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 #include <malloc.h>
 #include "BME280_STM32.h"
 #include <uart_reception.h>
 #include <task_handling.h>
+#include <data_buffer.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,9 +76,12 @@ extern Bool client_connected;
 extern com_state_wifi_card* current_wifi_com_status;
 extern com_state_wifi_card com_wifi_card_values[];
 
-extern volatile Bool flag_read_bme280, flag_cipsend;
+extern Bool flag_read_bme280, flag_cipsend, flag_sample_sending;
+extern Bool print;
+Bool flag_send_bundle = 0;
 
-float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0;
+float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0, Temperature_DS18B20 = 0;
+volatile float rpm_freno = 0, rpm_motor = 0;
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if(Size == 128){ // Poner el tamaño del buffer a mano
@@ -257,6 +260,9 @@ int main(void)
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
   strcpy(tx_buffer, "ATE0\r\n");
+
+  dbuf_clear();
+  uint32_t data_timeout = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -277,19 +283,41 @@ int main(void)
     	send_tx();
     }
     if((flag_cipsend == 1)){
+    	const struct DataRecord *bundle = dbuf_current_rd_slot();
+    	HAL_UART_Transmit(&huart2,(uint8_t *)bundle,sizeof(bundle),100);
     	flag_cipsend = 0;
-    	//update_buffer(tx_buffer, BUFFER_SIZE, data_to_send);
-    	//printf("Enviando cadena con datos %lu\n", HAL_GetTick());
-    	//HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer,strlen(tx_buffer),100);
-    	//printf("Tras envio de datos %lu\n", HAL_GetTick());
-    	//send_tx();
-    	//memset(tx_buffer, 0, BUFFER_SIZE);
-    	//printf("Tras el cipsend el milisegundo de programa es %lu\n", HAL_GetTick());
     }
     if((flag_read_bme280 == 1)){
     	BME280_Measure();
     	flag_read_bme280 = 0;
-    	//send_tx();
+    }
+    if(flag_sample_sending){
+    	if(HAL_GetTick()- data_timeout > 1000){
+    		uint32_t data_timeout = HAL_GetTick();
+    		struct DataRecord *sample = dbuf_current_wr_slot();
+    		if (sample)
+    		{
+    			sample->timeStamp = data_timeout;
+    			sample->samples[0] = Temperature_BME280;
+    			sample->samples[1] = Pressure_BME280;
+    			sample->samples[2] = Humidity_BME280;
+    			sample->samples[3] = Temperature_DS18B20;
+    			sample->samples[4] = rpm_freno;
+    			sample->samples[5] = rpm_motor;
+    			dbuf_push_record();
+    		}
+    		const struct DataRecord *bundle = dbuf_current_rd_slot();
+    		if (bundle)
+    		{
+    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",sizeof(bundle));
+    			send_tx();
+    			flag_send_bundle = 1;
+    		}
+    	}
+    }
+    if(print){
+    	printf("Llego start o stop\n");
+    	print = 0;
     }
   }
   /* USER CODE END 3 */

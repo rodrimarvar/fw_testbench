@@ -11,7 +11,8 @@ extern Bool client_connected;
 extern com_state_wifi_card* current_wifi_com_status;
 extern com_state_wifi_card com_wifi_card_values[];
 
-volatile Bool flag_read_bme280 = 0, flag_cipsend = 0;
+Bool flag_read_bme280 = 0, flag_cipsend = 0, flag_sample_sending = 0;
+Bool print = 0;
 
 KeywordResponse keywords_for_connection[] = {
         {"CONNECT", CONNECT, TRYING_TO_CONNECT},
@@ -40,7 +41,9 @@ KeywordResponse keywords_when_connected[] = {
 		{"FAIL", FAIL, TRYING_TO_CONNECT},
         //{"CIPSTATE", CIPSTATE, NO_TASK},
         //{"CLOSE_FROM_PC", CLOSE_FROM_PC, NO_TASK},
-		{"SEND", SEND_OK, CIPSEND_TASK}
+		{"SEND", SEND_OK, CIPSEND_TASK},
+        {"START", START_SENDING_SAMPLES, SAMPLE_SENDING},
+		{"STOP", STOP_SENDING_SAMPLES, SAMPLE_SENDING}
 };
 
 KeywordResponse default_keyword = {"", EMPTY, NO_TASK};
@@ -75,11 +78,19 @@ void task_handling(KeywordResponse keyword){
 			break;
 		case READ_BME280:
 			flag_read_bme280 = 1;
-			//printf("Antes del READ_BME280 el milisegundo de programa es %lu\n", HAL_GetTick());
 			break;
 		case CIPSEND_TASK:
 			if(flag_cipsend == 0){
 				flag_cipsend = 1;
+			}
+			break;
+		case SAMPLE_SENDING:
+			print = 1;
+			if(keyword.response == START_SENDING_SAMPLES){
+				flag_sample_sending = 1;
+			}
+			else{
+				flag_sample_sending = 0;
 			}
 			break;
 		case NO_TASK:
