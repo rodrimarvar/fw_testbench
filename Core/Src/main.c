@@ -263,6 +263,8 @@ int main(void)
 
   dbuf_clear();
   uint32_t data_timeout = HAL_GetTick();
+  struct DataRecord *sample;
+  const struct DataRecord *bundle;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -282,10 +284,19 @@ int main(void)
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
     }
-    if((flag_cipsend == 1)){
-    	const struct DataRecord *bundle = dbuf_current_rd_slot();
-    	HAL_UART_Transmit(&huart2,(uint8_t *)bundle,sizeof(bundle),100);
-    	flag_cipsend = 0;
+    if((flag_send_bundle == 1)){
+    	/*struct DataRecord package[dbuf_record_count()];
+    	for(size_t i=0;i < dbuf_record_count();i++){
+    		//printf("bundle %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",bundle->timeStamp,bundle->samples[0],bundle->samples[1],bundle->samples[2],bundle->samples[3],bundle->samples[4],bundle->samples[5]);
+    		package[i] = *bundle;
+
+    		HAL_UART_Transmit(&huart2,(uint8_t *)bundle->timeStamp,sizeof(uint32_t),500);
+    		bundle++;
+    	}
+    	size_t data_size = dbuf_record_count() * sizeof(struct DataRecord);
+    	//HAL_UART_Transmit(&huart2,(uint8_t *)package,data_size,500);
+    	dbuf_pop_record_bundle();*/
+    	flag_send_bundle = 0;
     }
     if((flag_read_bme280 == 1)){
     	BME280_Measure();
@@ -293,8 +304,8 @@ int main(void)
     }
     if(flag_sample_sending){
     	if(HAL_GetTick()- data_timeout > 1000){
-    		uint32_t data_timeout = HAL_GetTick();
-    		struct DataRecord *sample = dbuf_current_wr_slot();
+    		data_timeout = HAL_GetTick();
+    		sample = dbuf_current_wr_slot();
     		if (sample)
     		{
     			sample->timeStamp = data_timeout;
@@ -305,19 +316,23 @@ int main(void)
     			sample->samples[4] = rpm_freno;
     			sample->samples[5] = rpm_motor;
     			dbuf_push_record();
+    			//printf("sample %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",sample->timeStamp,sample->samples[0],sample->samples[1],sample->samples[2],sample->samples[3],sample->samples[4],sample->samples[5]);
     		}
-    		const struct DataRecord *bundle = dbuf_current_rd_slot();
+    		bundle = dbuf_current_rd_slot();
     		if (bundle)
     		{
-    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",sizeof(bundle));
-    			send_tx();
+    			/*for(size_t i=0;i < dbuf_record_count();i++){
+    				printf("bundle %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",bundle->timeStamp,bundle->samples[0],bundle->samples[1],bundle->samples[2],bundle->samples[3],bundle->samples[4],bundle->samples[5]);
+    				bundle++;
+    			}
+    			dbuf_pop_record_bundle();*/
+    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",4); //Probar un solo dato de tiempo
+    			send_tx();// hay que hacer despues cipsend
+    			//sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",(sizeof(bundle)*dbuf_record_count()));
+    			//send_tx();
     			flag_send_bundle = 1;
     		}
     	}
-    }
-    if(print){
-    	printf("Llego start o stop\n");
-    	print = 0;
     }
   }
   /* USER CODE END 3 */

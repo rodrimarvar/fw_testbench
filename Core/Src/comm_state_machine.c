@@ -9,7 +9,7 @@
 
 com_state_wifi_card com_wifi_card_values[] = {
         {STATE_CHECKING_COM, (response_t[]){OK}, 1,"AT+CIPMODE=0\r\n",(Conection_State_t[]){STATE_NO_ECHO}},
-		{STATE_NO_ECHO, (response_t[]){OK}, 1,"ATE1\r\n",(Conection_State_t[]){STATE_CWQAP}},
+		{STATE_NO_ECHO, (response_t[]){OK}, 1,"ATE0\r\n",(Conection_State_t[]){STATE_CWQAP}},
 		{STATE_CWQAP, (response_t[]){OK}, 1,"AT+CWQAP\r\n",(Conection_State_t[]){STATE_CIPSERVER_CLOSE}},
 		{STATE_CIPSERVER_CLOSE, (response_t[]){OK, ERR}, 2,"AT+CIPSERVER=0\r\n",(Conection_State_t[]){STATE_SETTING_CWMODE, STATE_SETTING_CWMODE}},
         {STATE_SETTING_CWMODE, (response_t[]){OK}, 1,"AT+CWMODE=2\r\n",(Conection_State_t[]){STATE_SETTING_CIPMUX}},
