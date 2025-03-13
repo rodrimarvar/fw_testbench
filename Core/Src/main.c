@@ -206,6 +206,16 @@ void exit_passthrough(){
 	send_tx();
 	HAL_Delay(1000);
 }
+
+void splitbuffer(uint32_t* buf32bit,uint8_t* buf8bit){
+	int i;
+	for (i=0;i<sizeof(buf32bit)/4;i++)    {
+		buf8bit[4*i+0]=(buf32bit[i]>>24)&0xFF;
+		buf8bit[4*i+1]=(buf32bit[i]>>16)&0xFF;
+		buf8bit[4*i+2]=(buf32bit[i]>>8)&0xFF;
+		buf8bit[4*i+3]=(buf32bit[i])&0xFF;
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -265,6 +275,8 @@ int main(void)
   uint32_t data_timeout = HAL_GetTick();
   struct DataRecord *sample;
   const struct DataRecord *bundle;
+
+  uint32_t timeStamp = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -284,7 +296,7 @@ int main(void)
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
     }
-    if((flag_send_bundle == 1)){
+    if((flag_cipsend == 1)){
     	/*struct DataRecord package[dbuf_record_count()];
     	for(size_t i=0;i < dbuf_record_count();i++){
     		//printf("bundle %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",bundle->timeStamp,bundle->samples[0],bundle->samples[1],bundle->samples[2],bundle->samples[3],bundle->samples[4],bundle->samples[5]);
@@ -296,14 +308,22 @@ int main(void)
     	size_t data_size = dbuf_record_count() * sizeof(struct DataRecord);
     	//HAL_UART_Transmit(&huart2,(uint8_t *)package,data_size,500);
     	dbuf_pop_record_bundle();*/
-    	flag_send_bundle = 0;
+    	//flag_send_bundle = 0;
+    	timeStamp = HAL_GetTick();
+    	uint8_t buf8bit[4];
+    	buf8bit[3]=(timeStamp>>24)&0xFF;
+    	buf8bit[2]=(timeStamp>>16)&0xFF;
+    	buf8bit[1]=(timeStamp>>8)&0xFF;
+    	buf8bit[0]=(timeStamp)&0xFF;
+    	HAL_UART_Transmit(&huart2,buf8bit,4,500);
+    	flag_cipsend = 0;
     }
     if((flag_read_bme280 == 1)){
     	BME280_Measure();
     	flag_read_bme280 = 0;
     }
     if(flag_sample_sending){
-    	if(HAL_GetTick()- data_timeout > 1000){
+    	if(HAL_GetTick()- data_timeout > 3000){
     		data_timeout = HAL_GetTick();
     		sample = dbuf_current_wr_slot();
     		if (sample)
@@ -330,7 +350,7 @@ int main(void)
     			send_tx();// hay que hacer despues cipsend
     			//sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",(sizeof(bundle)*dbuf_record_count()));
     			//send_tx();
-    			flag_send_bundle = 1;
+    			//flag_send_bundle = 1;
     		}
     	}
     }

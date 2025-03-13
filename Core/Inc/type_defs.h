@@ -56,7 +56,8 @@ typedef enum {
 	CLOSE_FROM_PC,
 	SEND_OK,
 	START_SENDING_SAMPLES,
-	STOP_SENDING_SAMPLES
+	STOP_SENDING_SAMPLES,
+	INVALID_LINK
 }response_t; // Don't use ERROR the stm already uses it
 
 #endif /* INC_TYPE_DEFS_H_ */

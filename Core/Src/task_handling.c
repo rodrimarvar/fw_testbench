@@ -43,7 +43,9 @@ KeywordResponse keywords_when_connected[] = {
         //{"CLOSE_FROM_PC", CLOSE_FROM_PC, NO_TASK},
 		{"SEND", SEND_OK, CIPSEND_TASK},
         {"START", START_SENDING_SAMPLES, SAMPLE_SENDING},
-		{"STOP", STOP_SENDING_SAMPLES, SAMPLE_SENDING}
+		{"STOP", STOP_SENDING_SAMPLES, SAMPLE_SENDING},
+		{"valid", INVALID_LINK, SAMPLE_SENDING},
+		{"link", INVALID_LINK, SAMPLE_SENDING}
 };
 
 KeywordResponse default_keyword = {"", EMPTY, NO_TASK};
