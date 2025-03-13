@@ -13,12 +13,11 @@
 #include <stdint.h>
 
 #ifndef DBUF_BUFFER_LENGTH
-#define DBUF_BUFFER_LENGTH (128) /**< Size of buffer in records */
+#define DBUF_BUFFER_LENGTH (224) /**< Size of buffer in records */
 #endif
 #ifndef DBUF_BUNDLE_LENGTH
 #define DBUF_BUNDLE_LENGTH (4) /**< Amount of records in a bundle */
 #endif
-
 /**
  * A structure to represent a measurement set
  */

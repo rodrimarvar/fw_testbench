@@ -64,6 +64,8 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
+#define DATARECORD_SIZE 28 /**< Size of a data record */
+
 volatile Bool flag_tx_sent = 0;
 extern volatile Bool flag_message_copied;
 extern volatile uint16_t overflow_start, head;
@@ -273,7 +275,7 @@ int main(void)
   uint32_t data_timeout = HAL_GetTick();
   struct DataRecord *sample;
   const struct DataRecord *bundle;
-  size_t number_of_DataRecords = 0;
+  size_t number_of_DataRecords = 0, pakcage_size = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -288,7 +290,7 @@ int main(void)
     	from_message_to_tasks(message_buffer);
     	flag_message_copied = 0;
     }
-    if((client_connected == 0)&&(HAL_GetTick() - delay > 2000)){
+    if((client_connected == 0)&&(HAL_GetTick() - delay > 1000)){
     	delay = HAL_GetTick();
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
@@ -297,23 +299,13 @@ int main(void)
     	bundle = dbuf_current_rd_slot();
     	if (bundle)
     	{
-    		uint8_t bundle_buffer[number_of_DataRecords][28];
-    		uint8_t prueba[28];
-    		serializeDataRecord(bundle, prueba);
+    		uint8_t bundle_buffer[number_of_DataRecords][DATARECORD_SIZE];
+    		uint8_t buffer_to_send[DATARECORD_SIZE*number_of_DataRecords];
     		for(size_t i=0;i < number_of_DataRecords;i++){
-    			print_dataRecord(bundle);
     			serializeDataRecord(bundle++, bundle_buffer[i]);
     		}
-    		uint8_t buffer_to_send[28*number_of_DataRecords];
-    		//memcpy(buffer_to_send, bundle_buffer, 28 * number_of_DataRecords);
-    		for(size_t i=0;i < number_of_DataRecords;i++){
-    			for(size_t k=0;k < 28;k++){
-    				buffer_to_send[i*28+k]=bundle_buffer[i][k];
-    			}
-    		}
-    		printf("Numero de dataRecords %d\n", number_of_DataRecords);
-    		//HAL_UART_Transmit(&huart2,buffer_to_send,28*number_of_DataRecords,500);
-    		HAL_UART_Transmit(&huart2,prueba,28,500);
+    		memcpy(buffer_to_send, bundle_buffer, pakcage_size);
+    		HAL_UART_Transmit(&huart2,buffer_to_send,pakcage_size,500);
     		dbuf_pop_record_bundle();
     	}
     	flag_cipsend = 0;
@@ -341,8 +333,8 @@ int main(void)
     		if (bundle)
     		{
     			number_of_DataRecords = dbuf_record_count();
-    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",28); //Probar un solo dato de tiempo
-    			printf("Numero de dataRecords %d y tamaNo %d\n", number_of_DataRecords, 28*number_of_DataRecords);
+    			pakcage_size = DATARECORD_SIZE*number_of_DataRecords;
+    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",pakcage_size); //Probar un solo dato de tiempo
     			send_tx();// hay que hacer despues cipsend
     		}
     	}
