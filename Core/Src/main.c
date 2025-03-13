@@ -207,14 +207,12 @@ void exit_passthrough(){
 	HAL_Delay(1000);
 }
 
-void splitbuffer(uint32_t* buf32bit,uint8_t* buf8bit){
-	int i;
-	for (i=0;i<sizeof(buf32bit)/4;i++)    {
-		buf8bit[4*i+0]=(buf32bit[i]>>24)&0xFF;
-		buf8bit[4*i+1]=(buf32bit[i]>>16)&0xFF;
-		buf8bit[4*i+2]=(buf32bit[i]>>8)&0xFF;
-		buf8bit[4*i+3]=(buf32bit[i])&0xFF;
-	}
+void serializeDataRecord(const struct DataRecord* record, uint8_t* buffer) {
+    memcpy(buffer, record, sizeof(struct DataRecord));
+}
+
+void print_dataRecord(const struct DataRecord* record){
+	printf("%lu %.2f %.2f %.2f %.2f %.2f %.2f\n",record->timeStamp,record->samples[0],record->samples[1],record->samples[2],record->samples[3],record->samples[4],record->samples[5]);
 }
 /* USER CODE END 0 */
 
@@ -275,8 +273,7 @@ int main(void)
   uint32_t data_timeout = HAL_GetTick();
   struct DataRecord *sample;
   const struct DataRecord *bundle;
-
-  uint32_t timeStamp = HAL_GetTick();
+  size_t number_of_DataRecords = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -297,25 +294,28 @@ int main(void)
     	send_tx();
     }
     if((flag_cipsend == 1)){
-    	/*struct DataRecord package[dbuf_record_count()];
-    	for(size_t i=0;i < dbuf_record_count();i++){
-    		//printf("bundle %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",bundle->timeStamp,bundle->samples[0],bundle->samples[1],bundle->samples[2],bundle->samples[3],bundle->samples[4],bundle->samples[5]);
-    		package[i] = *bundle;
-
-    		HAL_UART_Transmit(&huart2,(uint8_t *)bundle->timeStamp,sizeof(uint32_t),500);
-    		bundle++;
+    	bundle = dbuf_current_rd_slot();
+    	if (bundle)
+    	{
+    		uint8_t bundle_buffer[number_of_DataRecords][28];
+    		uint8_t prueba[28];
+    		serializeDataRecord(bundle, prueba);
+    		for(size_t i=0;i < number_of_DataRecords;i++){
+    			print_dataRecord(bundle);
+    			serializeDataRecord(bundle++, bundle_buffer[i]);
+    		}
+    		uint8_t buffer_to_send[28*number_of_DataRecords];
+    		//memcpy(buffer_to_send, bundle_buffer, 28 * number_of_DataRecords);
+    		for(size_t i=0;i < number_of_DataRecords;i++){
+    			for(size_t k=0;k < 28;k++){
+    				buffer_to_send[i*28+k]=bundle_buffer[i][k];
+    			}
+    		}
+    		printf("Numero de dataRecords %d\n", number_of_DataRecords);
+    		//HAL_UART_Transmit(&huart2,buffer_to_send,28*number_of_DataRecords,500);
+    		HAL_UART_Transmit(&huart2,prueba,28,500);
+    		dbuf_pop_record_bundle();
     	}
-    	size_t data_size = dbuf_record_count() * sizeof(struct DataRecord);
-    	//HAL_UART_Transmit(&huart2,(uint8_t *)package,data_size,500);
-    	dbuf_pop_record_bundle();*/
-    	//flag_send_bundle = 0;
-    	timeStamp = HAL_GetTick();
-    	uint8_t buf8bit[4];
-    	buf8bit[3]=(timeStamp>>24)&0xFF;
-    	buf8bit[2]=(timeStamp>>16)&0xFF;
-    	buf8bit[1]=(timeStamp>>8)&0xFF;
-    	buf8bit[0]=(timeStamp)&0xFF;
-    	HAL_UART_Transmit(&huart2,buf8bit,4,500);
     	flag_cipsend = 0;
     }
     if((flag_read_bme280 == 1)){
@@ -323,7 +323,7 @@ int main(void)
     	flag_read_bme280 = 0;
     }
     if(flag_sample_sending){
-    	if(HAL_GetTick()- data_timeout > 3000){
+    	if(HAL_GetTick()- data_timeout > 1000){
     		data_timeout = HAL_GetTick();
     		sample = dbuf_current_wr_slot();
     		if (sample)
@@ -336,21 +336,14 @@ int main(void)
     			sample->samples[4] = rpm_freno;
     			sample->samples[5] = rpm_motor;
     			dbuf_push_record();
-    			//printf("sample %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",sample->timeStamp,sample->samples[0],sample->samples[1],sample->samples[2],sample->samples[3],sample->samples[4],sample->samples[5]);
     		}
     		bundle = dbuf_current_rd_slot();
     		if (bundle)
     		{
-    			/*for(size_t i=0;i < dbuf_record_count();i++){
-    				printf("bundle %lu %.2f %.2f %.2f %.2f %.2f %.2f\n",bundle->timeStamp,bundle->samples[0],bundle->samples[1],bundle->samples[2],bundle->samples[3],bundle->samples[4],bundle->samples[5]);
-    				bundle++;
-    			}
-    			dbuf_pop_record_bundle();*/
-    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",4); //Probar un solo dato de tiempo
+    			number_of_DataRecords = dbuf_record_count();
+    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",28); //Probar un solo dato de tiempo
+    			printf("Numero de dataRecords %d y tamaNo %d\n", number_of_DataRecords, 28*number_of_DataRecords);
     			send_tx();// hay que hacer despues cipsend
-    			//sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",(sizeof(bundle)*dbuf_record_count()));
-    			//send_tx();
-    			//flag_send_bundle = 1;
     		}
     	}
     }
