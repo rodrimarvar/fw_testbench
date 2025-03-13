@@ -305,7 +305,7 @@ int main(void)
     			serializeDataRecord(bundle++, bundle_buffer[i]);
     		}
     		memcpy(buffer_to_send, bundle_buffer, pakcage_size);
-    		HAL_UART_Transmit(&huart2,buffer_to_send,pakcage_size,500);
+    		HAL_UART_Transmit_DMA(&huart2,buffer_to_send,pakcage_size);
     		dbuf_pop_record_bundle();
     	}
     	flag_cipsend = 0;
