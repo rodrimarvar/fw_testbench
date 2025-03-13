@@ -214,6 +214,13 @@ void serializeDataRecord(const struct DataRecord* record, uint8_t* buffer) {
 void print_dataRecord(const struct DataRecord* record){
 	printf("%lu %.2f %.2f %.2f %.2f %.2f %.2f\n",record->timeStamp,record->samples[0],record->samples[1],record->samples[2],record->samples[3],record->samples[4],record->samples[5]);
 }
+
+void print_buf8(uint8_t* buffer, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        printf("%u ", buffer[i]);
+    }
+    printf("\n");
+}
 /* USER CODE END 0 */
 
 /**
@@ -333,6 +340,7 @@ int main(void)
     				bundle_buffer[i] = (uint8_t *)malloc(DBUF_BUNDLE_SIZE * sizeof(uint8_t));
     				print_dataRecord(bundle+i);
     				serializeDataRecord(bundle+i, bundle_buffer[i]);
+    				print_buf8(bundle_buffer[i], DBUF_BUNDLE_SIZE);
     			}
     			buffer_to_send = (uint8_t *)malloc(DBUF_BUNDLE_SIZE * number_of_DataRecords * sizeof(uint8_t));
     			memcpy(buffer_to_send, bundle_buffer, pakcage_size);
