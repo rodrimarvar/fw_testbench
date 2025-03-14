@@ -280,8 +280,7 @@ int main(void)
   uint32_t data_timeout = HAL_GetTick();
   struct DataRecord *sample;
   const struct DataRecord *bundle;
-  size_t number_of_DataRecords = 0, pakcage_size = 0;
-  uint8_t** bundle_buffer;
+  size_t number_of_DataRecords = 0, package_size = 0;
   uint8_t* buffer_to_send;
   /* USER CODE END 2 */
 
@@ -297,7 +296,7 @@ int main(void)
     	from_message_to_tasks(message_buffer);
     	flag_message_copied = 0;
     }
-    if((client_connected == 0)&&(HAL_GetTick() - delay > 1000)){
+    if((client_connected == 0)&&(HAL_GetTick() - delay > 200)){
     	delay = HAL_GetTick();
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
@@ -305,7 +304,7 @@ int main(void)
     if((flag_cipsend == 1)){
     	if (buffer_to_send != NULL)
     	{
-    		HAL_UART_Transmit_DMA(&huart2,buffer_to_send,pakcage_size);
+    		HAL_UART_Transmit_DMA(&huart2,buffer_to_send,package_size);
     		free(buffer_to_send);
     	}
     	flag_cipsend = 0;
@@ -315,7 +314,7 @@ int main(void)
     	flag_read_bme280 = 0;
     }
     if(flag_sample_sending){
-    	if(HAL_GetTick()- data_timeout > 1000){
+    	if(HAL_GetTick()- data_timeout > 50){
     		data_timeout = HAL_GetTick();
     		sample = dbuf_current_wr_slot();
     		if (sample)
@@ -327,31 +326,21 @@ int main(void)
     			sample->samples[3] = Temperature_DS18B20;
     			sample->samples[4] = rpm_freno;
     			sample->samples[5] = rpm_motor;
-    			//print_dataRecord(sample);
     			dbuf_push_record();
     		}
-    		bundle = dbuf_current_rd_slot();
-    		if (bundle)
-    		{
-    			number_of_DataRecords = dbuf_record_count();
-    			pakcage_size = DBUF_BUNDLE_SIZE*number_of_DataRecords;
-    			bundle_buffer = (uint8_t **)malloc(number_of_DataRecords * sizeof(uint8_t*));
-    			for(size_t i=0;i < number_of_DataRecords;i++){
-    				bundle_buffer[i] = (uint8_t *)malloc(DBUF_BUNDLE_SIZE * sizeof(uint8_t));
-    				print_dataRecord(bundle+i);
-    				serializeDataRecord(bundle+i, bundle_buffer[i]);
-    				print_buf8(bundle_buffer[i], DBUF_BUNDLE_SIZE);
-    			}
-    			buffer_to_send = (uint8_t *)malloc(DBUF_BUNDLE_SIZE * number_of_DataRecords * sizeof(uint8_t));
-    			memcpy(buffer_to_send, bundle_buffer, pakcage_size);
-    			for(size_t i=0;i < number_of_DataRecords;i++){
-    				free(bundle_buffer[i]);
-    			}
-    			free(bundle_buffer);
-    			sprintf(tx_buffer,"AT+CIPSEND=0,%d\r\n",pakcage_size);
-    			send_tx();
-    			dbuf_pop_record_bundle();
+    		number_of_DataRecords = dbuf_record_count();
+    		if (number_of_DataRecords >= 4) {
+    			bundle = dbuf_current_rd_slot();
+    		    if (bundle) {
+    		        package_size = DataRecord_size * number_of_DataRecords;
+    		        buffer_to_send = (uint8_t *)malloc(DataRecord_size * number_of_DataRecords * sizeof(uint8_t));
+    		        memcpy(buffer_to_send,bundle,package_size);
+    		        sprintf(tx_buffer, "AT+CIPSEND=0,%d\r\n", package_size);
+    		        send_tx();
+    		        dbuf_pop_record_bundle();
+    		    }
     		}
+
     	}
     }
   }

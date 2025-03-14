@@ -28,6 +28,7 @@ struct DataRecord {
 
 /** Bundle size in bytes */
 #define DBUF_BUNDLE_SIZE (sizeof(struct DataRecord) * DBUF_BUNDLE_LENGTH)
+#define DataRecord_size sizeof(struct DataRecord)
 
 bool dbuf_bundle_available(void);
 void dbuf_clear(void);
