@@ -76,12 +76,23 @@ extern Bool client_connected;
 extern com_state_wifi_card* current_wifi_com_status;
 extern com_state_wifi_card com_wifi_card_values[];
 
+
 extern Bool flag_read_bme280, flag_cipsend, flag_sample_sending;
-extern Bool print;
-Bool flag_send_bundle = 0;
 
 float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0, Temperature_DS18B20 = 0;
 volatile float rpm_freno = 0, rpm_motor = 0;
+
+uint32_t time_tx = 0, delay = 0;
+int tx_buffer_size = 0;
+
+/*********	 Variables for sample sending	*********/
+uint32_t data_timeout = 0;
+size_t number_of_DataRecords = 0, package_size = 0;
+uint8_t* buffer_to_send;
+
+struct DataRecord *sample;
+const struct DataRecord *bundle;
+/*********	 Variables for sample sending	*********/
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if(Size == 128){ // Poner el tamaño del buffer a mano
@@ -95,7 +106,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     	}
     	copy_message(head, Size, 0);
     	flag_message_copied = 1;
-    	printf("%s", message_buffer);
+    	//printf("%s", message_buffer);
     }
     head = Size;
     // 🚀 Reiniciar la recepción UART en DMA
@@ -130,8 +141,7 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint32_t time_tx = 0, delay = 0;
-int tx_buffer_size = 0;
+
 
 void print_state(Conection_State_t state) {
     switch (state) {
@@ -207,10 +217,6 @@ void exit_passthrough(){
 	HAL_Delay(1000);
 }
 
-void serializeDataRecord(const struct DataRecord* record, uint8_t* buffer) {
-    memcpy(buffer, record, sizeof(struct DataRecord));
-}
-
 void print_dataRecord(const struct DataRecord* record){
 	printf("%lu %.2f %.2f %.2f %.2f %.2f %.2f\n",record->timeStamp,record->samples[0],record->samples[1],record->samples[2],record->samples[3],record->samples[4],record->samples[5]);
 }
@@ -277,11 +283,9 @@ int main(void)
   strcpy(tx_buffer, "ATE0\r\n");
 
   dbuf_clear();
-  uint32_t data_timeout = HAL_GetTick();
-  struct DataRecord *sample;
-  const struct DataRecord *bundle;
-  size_t number_of_DataRecords = 0, package_size = 0;
-  uint8_t* buffer_to_send;
+
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

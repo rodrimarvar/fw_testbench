@@ -12,7 +12,6 @@ extern com_state_wifi_card* current_wifi_com_status;
 extern com_state_wifi_card com_wifi_card_values[];
 
 Bool flag_read_bme280 = 0, flag_cipsend = 0, flag_sample_sending = 0;
-Bool print = 0;
 
 KeywordResponse keywords_for_connection[] = {
         {"CONNECT", CONNECT, TRYING_TO_CONNECT},
@@ -87,7 +86,6 @@ void task_handling(KeywordResponse keyword){
 			}
 			break;
 		case SAMPLE_SENDING:
-			print = 1;
 			if(keyword.response == START_SENDING_SAMPLES){
 				flag_sample_sending = 1;
 			}
