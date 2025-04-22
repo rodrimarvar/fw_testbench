@@ -193,12 +193,14 @@ void BME280_WakeUP(void)
 
 	// first read the register
 	HAL_I2C_Mem_Read(BME280_I2C, BME280_ADDRESS, CTRL_MEAS_REG, 1, &datatowrite, 1, 1000);
+	//HAL_I2C_Mem_Read_DMA(BME280_I2C, BME280_ADDRESS, CTRL_MEAS_REG, 1, &datatowrite, 1);
 
 	// modify the data with the forced mode
 	datatowrite = datatowrite | MODE_FORCED;
 
 	// write the new data to the register
 	HAL_I2C_Mem_Write(BME280_I2C, BME280_ADDRESS, CTRL_MEAS_REG, 1, &datatowrite, 1, 1000);
+	//HAL_I2C_Mem_Write_DMA(BME280_I2C, BME280_ADDRESS, CTRL_MEAS_REG, 1, &datatowrite, 1);
 
 	HAL_Delay (100);
 }

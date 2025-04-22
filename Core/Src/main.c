@@ -62,8 +62,32 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
+DMA_HandleTypeDef hdma_usart6_rx;
+DMA_HandleTypeDef hdma_usart6_tx;
 
 /* USER CODE BEGIN PV */
+/***********************************	DS18B20 variables	***********************************/
+
+typedef enum {START_MEASURE, PRESENCE_PULSE_1, SKIPPING_ROM1, REQUESTING_CONVERSION, PRESENCE_PULSE_2, SKIPPING_ROM2, REQUEST_TEMP, RECEIVING_BYTE_LSB,  RECEIVING_BYTE_MSB, FINISHED}DS18B20_state_t;
+
+volatile bool flag_uart6_sent = 0;
+volatile bool flag_timer = 0;
+
+volatile int presence = 0;
+uint8_t RxData[8], RxData_LSB[8], RxData_MSB[8], Temp_LSB = 0, Temp_MSB = 0;
+int16_t Temp = 0;
+float Temperature_DS18B20 = 0;
+uint8_t Tx_PRESENCE_PULSE[] = {0xF0}, Rx_PRESENCE_PULSE[] = {0x00};
+uint8_t data_global = 0xF0;
+
+uint8_t FF_byte[] = {0xFF};
+uint8_t C0_byte[] = {0xC0};
+
+
+uint32_t delay_ds18b20 = 0;
+DS18B20_state_t DS18B20_state = START_MEASURE, *DS18B20_state_ptr = &DS18B20_state;
+
+/***********************************	DS18B20 variables	***********************************/
 volatile Bool flag_tx_sent = 0;
 extern volatile Bool flag_message_copied;
 extern volatile uint16_t overflow_start, head;
@@ -79,10 +103,10 @@ extern com_state_wifi_card com_wifi_card_values[];
 
 extern Bool flag_read_bme280, flag_cipsend, flag_sample_sending;
 
-float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0, Temperature_DS18B20 = 0;
+float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0;
 volatile float rpm_freno = 0, rpm_motor = 0;
 
-uint32_t time_tx = 0, delay = 0;
+uint32_t time_tx = 0, delay_connection = 0, delay_bme280 = 0;
 int tx_buffer_size = 0;
 
 /*********	 Variables for sample sending	*********/
@@ -118,6 +142,10 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 		flag_tx_sent = 0;//incluir en send_tx()
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t*)rx_buffer, BUFFER_SIZE);
 	}
+
+	if(huart->Instance == USART6){
+		flag_uart6_sent = 1;
+	}
 }
 /* USER CODE END PV */
 
@@ -141,8 +169,197 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/***********************************	DS18B20 functions	***********************************/
+void MX_USART6_UART_Init_baud_selecting(uint32_t baud_rate)
+{
+	huart6.Instance = USART6;
+	huart6.Init.BaudRate = baud_rate;
+	huart6.Init.WordLength = UART_WORDLENGTH_8B;
+	huart6.Init.StopBits = UART_STOPBITS_1;
+	huart6.Init.Parity = UART_PARITY_NONE;
+	huart6.Init.Mode = UART_MODE_TX_RX;
+	huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+	if (HAL_HalfDuplex_Init(&huart6) != HAL_OK)
+	{
+		Error_Handler();
+	}
+}
 
+void DS18B20_Write(uint8_t data){
+	uint8_t buffer[8];
+	for(int i = 0;i < 8;i++){
+		if((data & (1<<i)) != 0){
+			buffer[i] = 0xFF;
+		}
+		else{
+			buffer[i] = 0x00;
+		}
+	}
+	HAL_UART_Transmit_DMA(&huart6,buffer,8);
+}
 
+void DS18B20_Start(void){
+	MX_USART6_UART_Init_baud_selecting(9600);
+	HAL_UART_Transmit_DMA(&huart6,Tx_PRESENCE_PULSE,1);
+	HAL_UART_Receive_DMA(&huart6,Rx_PRESENCE_PULSE,1);
+}
+
+bool DS18B20_Presence_Pulse_check(void){
+	if(Rx_PRESENCE_PULSE[0] == 0xF0){
+		return 0;
+	}
+	return 1;
+}
+
+void DS18B20_Read(uint8_t *rx){
+	uint8_t buffer[8];
+	for(int i = 0;i < 8;i++){
+		buffer[i] = 0xFF;
+	}
+	HAL_UART_Transmit_DMA(&huart6,buffer,8);
+	HAL_UART_Receive_DMA(&huart6,rx,8);
+}
+
+uint8_t byte_parser(uint8_t *data){
+	uint8_t value = 0;
+
+	for(int i = 0;i < 8;i++){
+		if(data[i] == 0xFF){
+			value |= 1<<i;
+		}
+	}
+
+	return value;
+}
+
+void action(DS18B20_state_t state){
+	switch(state){
+		case PRESENCE_PULSE_1:
+			DS18B20_Start();
+			break;
+		case SKIPPING_ROM1:
+			MX_USART6_UART_Init_baud_selecting(115200);
+			DS18B20_Write(0xCC);
+			break;
+		case REQUESTING_CONVERSION:
+			DS18B20_Write(0x44);
+			delay_ds18b20 = HAL_GetTick();
+			break;
+		case PRESENCE_PULSE_2:
+			DS18B20_Start();
+			break;
+		case SKIPPING_ROM2:
+			MX_USART6_UART_Init_baud_selecting(115200);
+			DS18B20_Write(0xCC);
+			break;
+		case REQUEST_TEMP:
+			DS18B20_Write(0xBE);
+			break;
+		case RECEIVING_BYTE_LSB:
+			DS18B20_Read(RxData_LSB);
+			break;
+		case RECEIVING_BYTE_MSB:
+			DS18B20_Read(RxData_MSB);
+			break;
+		case FINISHED:
+			Temp_LSB = byte_parser(RxData_LSB);
+			Temp_MSB = byte_parser(RxData_MSB);
+
+			Temp = (Temp_MSB << 8) | Temp_LSB;
+			Temperature_DS18B20 = (float) Temp/16.0;
+			delay_ds18b20 = HAL_GetTick();
+		default:
+			break;
+	}
+}
+
+bool DS18B20_state_handling(DS18B20_state_t *state){
+	switch(*state){
+		case START_MEASURE:
+			*state = PRESENCE_PULSE_1;
+			return 1;
+			break;
+		case PRESENCE_PULSE_1:
+			if(flag_uart6_sent == 1){
+				if(DS18B20_Presence_Pulse_check()){
+					*state = SKIPPING_ROM1;
+				}
+				//printf("Rx_Presence_pulse = 0x%02X\n", Rx_PRESENCE_PULSE[0]);
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case SKIPPING_ROM1:
+			if(flag_uart6_sent == 1){
+				*state = REQUESTING_CONVERSION;
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case REQUESTING_CONVERSION:
+			if(flag_uart6_sent == 1){
+				*state = PRESENCE_PULSE_2;
+				flag_uart6_sent = 0;
+				Rx_PRESENCE_PULSE[0] = 0xF0;
+				return 1;
+			}
+			return 0;
+			break;
+		case PRESENCE_PULSE_2:
+			if(flag_uart6_sent == 1){
+				if(DS18B20_Presence_Pulse_check()){
+					*state = SKIPPING_ROM2;
+				}
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case SKIPPING_ROM2:
+			if(flag_uart6_sent == 1){
+				*state = REQUEST_TEMP;
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case REQUEST_TEMP:
+			if(flag_uart6_sent == 1){
+				*state = RECEIVING_BYTE_LSB;
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case RECEIVING_BYTE_LSB:
+			if(flag_uart6_sent == 1){
+				*state = RECEIVING_BYTE_MSB;
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case RECEIVING_BYTE_MSB:
+			if(flag_uart6_sent == 1){
+				*state = FINISHED;
+				flag_uart6_sent = 0;
+				return 1;
+			}
+			return 0;
+			break;
+		case FINISHED:
+			Rx_PRESENCE_PULSE[0] = 0xF0;
+			*state = START_MEASURE;
+			return 1;
+		default:
+			break;
+		}
+	return 0;
+}
+/***********************************	DS18B20 functions	***********************************/
 void print_state(Conection_State_t state) {
     switch (state) {
         case STATE_CHECKING_COM:
@@ -300,8 +517,8 @@ int main(void)
     	from_message_to_tasks(message_buffer);
     	flag_message_copied = 0;
     }
-    if((client_connected == 0)&&(HAL_GetTick() - delay > 200)){
-    	delay = HAL_GetTick();
+    if((client_connected == 0)&&(HAL_GetTick() - delay_connection > 200)){
+    	delay_connection = HAL_GetTick();
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
     }
@@ -315,9 +532,21 @@ int main(void)
     }
     if((flag_read_bme280 == 1)){
     	BME280_Measure();
+    	printf("Reading BME280\n");
     	flag_read_bme280 = 0;
     }
     if(flag_sample_sending){
+    	if((HAL_GetTick() - delay_ds18b20 > 5000)){
+    		if(DS18B20_state_handling(DS18B20_state_ptr)){
+    			action(DS18B20_state);
+    	    }
+    	}
+
+    	if((HAL_GetTick() - delay_bme280 > 10000)){
+    		delay_bme280 = HAL_GetTick();
+    		BME280_Measure();
+    	}
+
     	if(HAL_GetTick()- data_timeout > 50){
     		data_timeout = HAL_GetTick();
     		sample = dbuf_current_wr_slot();
@@ -678,6 +907,7 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
@@ -686,6 +916,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
+  /* DMA2_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
 
 }
 
