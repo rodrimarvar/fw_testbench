@@ -50,6 +50,8 @@ int __io_putchar(int ch)
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_rx;
+DMA_HandleTypeDef hdma_i2c1_tx;
 
 I2S_HandleTypeDef hi2s2;
 I2S_HandleTypeDef hi2s3;
@@ -109,6 +111,8 @@ volatile float rpm_freno = 0, rpm_motor = 0;
 uint32_t time_tx = 0, delay_connection = 0, delay_bme280 = 0;
 int tx_buffer_size = 0;
 
+volatile bool flag_rx_bme280 = 0;
+extern BME280_state_t BME280_state;
 /*********	 Variables for sample sending	*********/
 uint32_t data_timeout = 0;
 size_t number_of_DataRecords = 0, package_size = 0;
@@ -145,6 +149,13 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 
 	if(huart->Instance == USART6){
 		flag_uart6_sent = 1;
+	}
+}
+
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
+	if(hi2c->Instance == hi2c1.Instance){
+		flag_rx_bme280 = 1;
+		printf("Lectura i2c completa\n");
 	}
 }
 /* USER CODE END PV */
@@ -360,6 +371,13 @@ bool DS18B20_state_handling(DS18B20_state_t *state){
 	return 0;
 }
 /***********************************	DS18B20 functions	***********************************/
+
+/***********************************	BME280 functions	***********************************/
+
+
+
+/***********************************	BME280 functions	***********************************/
+
 void print_state(Conection_State_t state) {
     switch (state) {
         case STATE_CHECKING_COM:
@@ -531,9 +549,10 @@ int main(void)
     	flag_cipsend = 0;
     }
     if((flag_read_bme280 == 1)){
-    	BME280_Measure();
-    	printf("Reading BME280\n");
-    	flag_read_bme280 = 0;
+    	if(BME280_Measure()){
+    		flag_read_bme280 = 0;
+    	}
+    	//printf("Reading BME280\n");
     }
     if(flag_sample_sending){
     	if((HAL_GetTick() - delay_ds18b20 > 5000)){
@@ -543,8 +562,9 @@ int main(void)
     	}
 
     	if((HAL_GetTick() - delay_bme280 > 10000)){
-    		delay_bme280 = HAL_GetTick();
-    		BME280_Measure();
+    		if(BME280_Measure()){
+    			delay_bme280 = HAL_GetTick();
+    		}
     	}
 
     	if(HAL_GetTick()- data_timeout > 50){
@@ -910,6 +930,12 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);

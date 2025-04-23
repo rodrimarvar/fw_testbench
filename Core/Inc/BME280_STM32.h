@@ -42,6 +42,8 @@
  *         IIR is used to avoid the short term fluctuations
  *         Check datasheet page no 18 and page no 30
  */
+typedef enum{STEP1, STEP2, STEP3}BME280_state_t;
+
 
 int BME280_Config (uint8_t osrs_t, uint8_t osrs_p, uint8_t osrs_h, uint8_t mode, uint8_t t_sb, uint8_t filter);
 
@@ -57,7 +59,7 @@ void BME280_WakeUP(void);
 /* measure the temp, pressure and humidity
  * the values will be stored in the parameters passed to the function
  */
-void BME280_Measure (void);
+int BME280_Measure (void);
 
 
 // Oversampling definitions

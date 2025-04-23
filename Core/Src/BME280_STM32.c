@@ -19,6 +19,7 @@
 */
 
 #include "BME280_STM32.h"
+#include "stdbool.h"
 
 extern I2C_HandleTypeDef hi2c1;
 #define BME280_I2C &hi2c1
@@ -28,7 +29,13 @@ extern I2C_HandleTypeDef hi2c1;
 
 #define BME280_ADDRESS 0xEC  // SDIO is grounded, the 7 bit address is 0x76 and 8 bit address = 0x76<<1 = 0xEC
 
+
+BME280_state_t BME280_state = STEP1;
+
 extern float Temperature_BME280, Pressure_BME280, Humidity_BME280;
+extern bool flag_rx_bme280;
+
+uint8_t RawData[8];
 
 uint8_t chipID;
 
@@ -161,22 +168,32 @@ int BME280_Config (uint8_t osrs_t, uint8_t osrs_p, uint8_t osrs_h, uint8_t mode,
 
 int BMEReadRaw(void)
 {
-	uint8_t RawData[8];
-
 	// Check the chip ID before reading
-	HAL_I2C_Mem_Read(&hi2c1, BME280_ADDRESS, ID_REG, 1, &chipID, 1, 1000);
+	if(BME280_state == STEP1){
+		flag_rx_bme280 = 0;
+		HAL_I2C_Mem_Read_DMA(&hi2c1, BME280_ADDRESS, ID_REG, 1, &chipID, 1);
+		BME280_state = STEP2;
+	}
 
-	if (chipID == 0x60)
+
+	if ((chipID == 0x60)&&(flag_rx_bme280 == 1)&&(BME280_state == STEP2))
 	{
 		// Read the Registers 0xF7 to 0xFE
-		HAL_I2C_Mem_Read(BME280_I2C, BME280_ADDRESS, PRESS_MSB_REG, 1, RawData, 8, HAL_MAX_DELAY);
-
+		//HAL_I2C_Mem_Read(BME280_I2C, BME280_ADDRESS, PRESS_MSB_REG, 1, RawData, 8, 100);
+		HAL_I2C_Mem_Read_DMA(BME280_I2C, BME280_ADDRESS, PRESS_MSB_REG, 1, RawData, 8);
+		flag_rx_bme280 = 0;
+		BME280_state = STEP3;
 		/* Calculate the Raw data for the parameters
 		 * Here the Pressure_BME280 and Temperature_BME280 are in 20 bit format and Humidity_BME280 in 16 bit format
 		 */
+	}
+
+	if((BME280_state == STEP3)&&(flag_rx_bme280 == 1)){
 		pRaw = (RawData[0]<<12)|(RawData[1]<<4)|(RawData[2]>>4);
 		tRaw = (RawData[3]<<12)|(RawData[4]<<4)|(RawData[5]>>4);
 		hRaw = (RawData[6]<<8)|(RawData[7]);
+		flag_rx_bme280 = 0;
+		BME280_state = STEP1;
 
 		return 0;
 	}
@@ -303,7 +320,7 @@ uint32_t bme280_compensate_H_int32(int32_t adc_H)
 /* measure the temp, Pressure_BME280 and Humidity_BME280
  * the values will be stored in the parameters passed to the function
  */
-void BME280_Measure (void)
+int BME280_Measure()
 {
 	if (BMEReadRaw() == 0)
 	{
@@ -330,12 +347,14 @@ void BME280_Measure (void)
 		  {
 			  Humidity_BME280 = (bme280_compensate_H_int32 (hRaw))/1024.0;  // as per datasheet, the temp is x1024
 		  }
+		  return 1;
 	}
 
 
 	// if the device is detached
 	else
 	{
-		Temperature_BME280 = Pressure_BME280 = Humidity_BME280 = 0;
+		return 0;
+		//Temperature_BME280 = Pressure_BME280 = Humidity_BME280 = 0;
 	}
 }
