@@ -95,6 +95,8 @@ void Error_Handler(void);
 #define ESP01_RST_GPIO_Port GPIOB
 #define ESP01_EN_Pin GPIO_PIN_1
 #define ESP01_EN_GPIO_Port GPIOB
+#define QENC_A_Pin GPIO_PIN_9
+#define QENC_A_GPIO_Port GPIOE
 #define CLK_IN_Pin GPIO_PIN_10
 #define CLK_IN_GPIO_Port GPIOB
 #define LD5_Pin GPIO_PIN_8

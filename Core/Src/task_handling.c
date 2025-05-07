@@ -10,6 +10,7 @@
 extern Bool client_connected;
 extern com_state_wifi_card* current_wifi_com_status;
 extern com_state_wifi_card com_wifi_card_values[];
+extern uint32_t time_init;
 
 Bool flag_read_bme280 = 0, flag_cipsend = 0, flag_sample_sending = 0;
 
@@ -88,6 +89,7 @@ void task_handling(KeywordResponse keyword){
 		case SAMPLE_SENDING:
 			if(keyword.response == START_SENDING_SAMPLES){
 				flag_sample_sending = 1;
+				time_init = HAL_GetTick();
 			}
 			else{
 				flag_sample_sending = 0;

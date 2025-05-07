@@ -58,6 +58,7 @@ I2S_HandleTypeDef hi2s3;
 
 SPI_HandleTypeDef hspi1;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
@@ -68,6 +69,22 @@ DMA_HandleTypeDef hdma_usart6_rx;
 DMA_HandleTypeDef hdma_usart6_tx;
 
 /* USER CODE BEGIN PV */
+/***********************************	RPM variables	***********************************/
+volatile bool hall_polarity=0;
+
+volatile float rpm_motor=0,rpm_freno=0;
+
+volatile bool polarity_encoder_a=0,polarity_encoder_b=0;
+
+volatile uint32_t valor1_hall = 0,valor2_hall = 0,periodo_hall = 0,overflow_count_hall = 0, overflow_count_encoder = 0;
+
+volatile uint32_t periodo_encoder = 0;
+
+volatile uint32_t valor1_encoder_a = 0,valor2_encoder_a = 0;
+
+//uint32_t valor1_encoder_b,valor2_encoder_b;
+/***********************************	RPM variables	***********************************/
+
 /***********************************	DS18B20 variables	***********************************/
 
 typedef enum {START_MEASURE, PRESENCE_PULSE_1, SKIPPING_ROM1, REQUESTING_CONVERSION, PRESENCE_PULSE_2, SKIPPING_ROM2, REQUEST_TEMP, RECEIVING_BYTE_LSB,  RECEIVING_BYTE_MSB, FINISHED}DS18B20_state_t;
@@ -106,7 +123,6 @@ extern com_state_wifi_card com_wifi_card_values[];
 extern Bool flag_read_bme280, flag_cipsend, flag_sample_sending;
 
 float Temperature_BME280 = 0, Pressure_BME280 = 0, Humidity_BME280 = 0;
-volatile float rpm_freno = 0, rpm_motor = 0;
 
 uint32_t time_tx = 0, delay_connection = 0, delay_bme280 = 0;
 int tx_buffer_size = 0;
@@ -114,7 +130,7 @@ int tx_buffer_size = 0;
 volatile bool flag_rx_bme280 = 0;
 extern BME280_state_t BME280_state;
 /*********	 Variables for sample sending	*********/
-uint32_t data_timeout = 0;
+uint32_t data_timeout = 0, time_sample = 0, time_init = 0;
 size_t number_of_DataRecords = 0, package_size = 0;
 uint8_t* buffer_to_send;
 
@@ -155,8 +171,75 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 	if(hi2c->Instance == hi2c1.Instance){
 		flag_rx_bme280 = 1;
-		printf("Lectura i2c completa\n");
 	}
+}
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
+    if(htim==&htim3){
+		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2){
+			if(hall_polarity == 0){
+				valor1_hall = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+				hall_polarity = 1;
+				overflow_count_hall = 0; // Reset overflow count for new measurement
+			}
+			else if(hall_polarity == 1){
+				valor2_hall = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+				__HAL_TIM_SET_COUNTER(htim, 0);
+
+				// Calculate period considering possible overflow
+				if(valor2_hall >= valor1_hall){
+					periodo_hall = valor2_hall - valor1_hall + overflow_count_hall * (htim->Init.Period + 1);
+				}
+				else {
+					// Handle case where counter overflowed between captures
+					periodo_hall = (valor2_hall + (htim->Init.Period + 1)) - valor1_hall + overflow_count_hall * (htim->Init.Period + 1);
+				}
+
+				hall_polarity = 0;
+			}
+		}
+		if(periodo_hall!=0){
+		    rpm_motor=(1000*1000/periodo_hall)*60;
+		}
+    }
+
+    if(htim==&htim1){
+		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1){
+
+			if(polarity_encoder_a==0){
+				valor1_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+				polarity_encoder_a=1;
+			}
+			else{
+				valor2_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+				__HAL_TIM_SET_COUNTER(htim, 0);
+
+				// Calculate period considering possible overflow
+				if(valor2_encoder_a >= valor1_encoder_a){
+					periodo_encoder = valor2_encoder_a - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
+				}
+				else {
+					// Handle case where counter overflowed between captures
+					periodo_encoder = (valor2_encoder_a + (htim->Init.Period + 1)) - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
+				}
+				polarity_encoder_a=0;
+			}
+		}
+		if(periodo_encoder!=0){
+			rpm_freno=(1000*1000/periodo_encoder*600)*60;
+		}
+    }
+}
+
+// Callback to handle timer overflow
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+    if(htim == &htim3){ // Ensure this is the correct timer
+        overflow_count_hall++;
+    }
+
+    if(htim==&htim1){
+    	overflow_count_encoder++;
+    }
 }
 /* USER CODE END PV */
 
@@ -172,6 +255,7 @@ static void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_TIM1_Init(void);
 void MX_USB_HOST_Process(void);
 
 /* USER CODE BEGIN PFP */
@@ -370,14 +454,15 @@ bool DS18B20_state_handling(DS18B20_state_t *state){
 		}
 	return 0;
 }
-/***********************************	DS18B20 functions	***********************************/
 
+uint32_t HAL_GetTick(void)
+{
+	if(flag_sample_sending){
+		time_sample = uwTick - time_init;
+	}
+	return uwTick;
+}
 /***********************************	BME280 functions	***********************************/
-
-
-
-/***********************************	BME280 functions	***********************************/
-
 void print_state(Conection_State_t state) {
     switch (state) {
         case STATE_CHECKING_COM:
@@ -505,6 +590,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_USART6_UART_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   BME280_Config(OSRS_2, OSRS_16, OSRS_1, MODE_NORMAL, T_SB_0p5, IIR_16);
 
@@ -572,7 +658,7 @@ int main(void)
     		sample = dbuf_current_wr_slot();
     		if (sample)
     		{
-    			sample->timeStamp = data_timeout;
+    			sample->timeStamp = time_sample;
     			sample->samples[0] = Temperature_BME280;
     			sample->samples[1] = Pressure_BME280;
     			sample->samples[2] = Humidity_BME280;
@@ -595,6 +681,9 @@ int main(void)
     		}
 
     	}
+    }
+    else if(time_sample != 0){
+    	time_sample = 0;
     }
   }
   /* USER CODE END 3 */
@@ -806,6 +895,65 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 96-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 65535;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -824,7 +972,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 96-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
