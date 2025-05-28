@@ -75,7 +75,7 @@ volatile bool hall_polarity=0;
 
 volatile float rpm_motor=0,rpm_freno=0;
 
-volatile bool polarity_encoder_a=0,polarity_encoder_b=0;
+volatile bool polarity_encoder=0,polarity_encoder_b=0;
 
 volatile uint32_t valor1_hall = 0,valor2_hall = 0,periodo_hall = 0,overflow_count_hall = 0, overflow_count_encoder = 0;
 
@@ -176,7 +176,6 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c){
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
-	pulsos_hall++;
     if(htim==&htim3){
 		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2){
 			if(hall_polarity == 0){
@@ -201,34 +200,32 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 			}
 		}
 		if(periodo_hall!=0){
-		    rpm_motor=(1000*1000/periodo_hall)*60;
+		    rpm_motor=(float)((float)1000*1000/periodo_hall)*60;
 		}
     }
 
     if(htim==&htim1){
-		if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1){
+    	if(polarity_encoder==0){
+    		valor1_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+    		polarity_encoder=1;
+    		overflow_count_encoder = 0;
+		}
+    	else{
+    		valor2_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+    		__HAL_TIM_SET_COUNTER(htim, 0);
 
-			if(polarity_encoder_a==0){
-				valor1_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-				polarity_encoder_a=1;
+    		// Calculate period considering possible overflow
+    		if(valor2_encoder_a >= valor1_encoder_a){
+    			periodo_encoder = valor2_encoder_a - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
 			}
-			else{
-				valor2_encoder_a = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-				__HAL_TIM_SET_COUNTER(htim, 0);
-
-				// Calculate period considering possible overflow
-				if(valor2_encoder_a >= valor1_encoder_a){
-					periodo_encoder = valor2_encoder_a - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
-				}
-				else {
-					// Handle case where counter overflowed between captures
-					periodo_encoder = (valor2_encoder_a + (htim->Init.Period + 1)) - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
-				}
-				polarity_encoder_a=0;
+    		else {
+    			// Handle case where counter overflowed between captures
+    			periodo_encoder = (valor2_encoder_a + (htim->Init.Period + 1)) - valor1_encoder_a + overflow_count_encoder * (htim->Init.Period + 1);
 			}
+    		polarity_encoder=0;
 		}
 		if(periodo_encoder!=0){
-			rpm_freno=(1000*1000/periodo_encoder*600)*60;
+			rpm_freno=(float)(((float)1000*1000/(periodo_encoder*600))*60);
 		}
     }
 }
@@ -653,7 +650,7 @@ int main(void)
     	    }
     	}
 
-    	if((HAL_GetTick() - delay_bme280 > 10000)){
+    	if((HAL_GetTick() - delay_bme280 > 3000)){
     		if(BME280_Measure()){
     			delay_bme280 = HAL_GetTick();
     		}
@@ -948,7 +945,7 @@ static void MX_TIM1_Init(void)
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
+  sConfigIC.ICFilter = 4;
   if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -1006,7 +1003,7 @@ static void MX_TIM3_Init(void)
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
   sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
+  sConfigIC.ICFilter = 4;
   if (HAL_TIM_IC_ConfigChannel(&htim3, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
