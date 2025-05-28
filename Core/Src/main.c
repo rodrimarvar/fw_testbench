@@ -625,6 +625,7 @@ int main(void)
     	flag_message_copied = 0;
     }
     if((client_connected == 0)&&(HAL_GetTick() - delay_connection > 200)){
+    	flag_sample_sending = 0;
     	delay_connection = HAL_GetTick();
     	update_buffer(tx_buffer, BUFFER_SIZE, (*current_wifi_com_status).command);
     	send_tx();
