@@ -10,6 +10,7 @@
 
 #include <type_defs.h>
 #include <comm_state_machine.h>
+#include <main.h>
 
 typedef struct {
         const char *keyword;

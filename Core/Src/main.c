@@ -645,13 +645,13 @@ int main(void)
     	//printf("Reading BME280\n");
     }
     if(flag_sample_sending){
-    	if((HAL_GetTick() - delay_ds18b20 > 5000)){
+    	if((HAL_GetTick() - delay_ds18b20 > 1000)){
     		if(DS18B20_state_handling(DS18B20_state_ptr)){
     			action(DS18B20_state);
     	    }
     	}
 
-    	if((HAL_GetTick() - delay_bme280 > 3000)){
+    	if((HAL_GetTick() - delay_bme280 > 1000)){
     		if(BME280_Measure()){
     			delay_bme280 = HAL_GetTick();
     		}
