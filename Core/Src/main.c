@@ -81,6 +81,8 @@ volatile int contador_rpm_freno = 0;
 volatile bool motor_stopped = 0;
 volatile bool freno_stopped = 0;
 
+uint32_t tiemout_motor_stopped = 0;
+
 volatile bool polarity_encoder=0,polarity_encoder_b=0;
 
 volatile uint32_t valor1_hall = 0,valor2_hall = 0,periodo_hall = 0,overflow_count_hall = 0, overflow_count_encoder = 0;
@@ -677,10 +679,14 @@ int main(void)
     		}
     	}
 
-    	if(HAL_GetTick()- data_timeout > 50){
+    	if(HAL_GetTick() - data_timeout > 50){
     		data_timeout = HAL_GetTick();
-    		if(motor_stopped == 1){
-    			rpm_motor = 0;
+
+    		if(HAL_GetTick() - tiemout_motor_stopped > 200){
+    			tiemout_motor_stopped = HAL_GetTick();
+    			if(motor_stopped == 1){
+    				rpm_motor = 0;
+    			}
     		}
     		if(freno_stopped == 1){
     			rpm_freno_media = 0;
