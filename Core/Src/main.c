@@ -73,7 +73,13 @@ DMA_HandleTypeDef hdma_usart6_tx;
 volatile uint32_t pulsos_hall = 0;
 volatile bool hall_polarity=0;
 
-volatile float rpm_motor=0,rpm_freno=0;
+volatile float rpm_motor=0,rpm_freno=0, rpm_freno_media = 0.0f;
+
+volatile float suma_rpm_freno = 0.0f;
+volatile int contador_rpm_freno = 0;
+
+volatile bool motor_stopped = 0;
+volatile bool freno_stopped = 0;
 
 volatile bool polarity_encoder=0,polarity_encoder_b=0;
 
@@ -201,6 +207,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 		}
 		if(periodo_hall!=0){
 		    rpm_motor=(float)((float)1000*1000/periodo_hall)*60;
+		    motor_stopped = 0;
 		}
     }
 
@@ -226,6 +233,9 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 		}
 		if(periodo_encoder!=0){
 			rpm_freno=(float)(((float)1000*1000/(periodo_encoder*600))*60);
+			suma_rpm_freno += rpm_freno;
+			contador_rpm_freno++;
+			freno_stopped = 0;
 		}
     }
 }
@@ -546,6 +556,16 @@ void print_buf8(uint8_t* buffer, size_t length) {
     }
     printf("\n");
 }
+
+float obtenerMedia(void) {
+    if (contador_rpm_freno == 0) return 0.0f;  // Evitar división por 0
+    return suma_rpm_freno / contador_rpm_freno;
+}
+
+void reiniciarMedia(void) {
+	suma_rpm_freno = 0.0f;
+	contador_rpm_freno = 0;
+}
 /* USER CODE END 0 */
 
 /**
@@ -659,15 +679,23 @@ int main(void)
 
     	if(HAL_GetTick()- data_timeout > 50){
     		data_timeout = HAL_GetTick();
+    		if(motor_stopped == 1){
+    			rpm_motor = 0;
+    		}
+    		if(freno_stopped == 1){
+    			rpm_freno_media = 0;
+    		}
     		sample = dbuf_current_wr_slot();
     		if (sample)
     		{
+    			rpm_freno_media = obtenerMedia();
+    			reiniciarMedia();
     			sample->timeStamp = time_sample;
     			sample->samples[0] = Temperature_BME280;
     			sample->samples[1] = Pressure_BME280;
     			sample->samples[2] = Humidity_BME280;
     			sample->samples[3] = Temperature_DS18B20;
-    			sample->samples[4] = rpm_freno;
+    			sample->samples[4] = rpm_freno_media;
     			sample->samples[5] = rpm_motor;
     			dbuf_push_record();
     		}
@@ -683,7 +711,8 @@ int main(void)
     		        dbuf_pop_record_bundle();
     		    }
     		}
-
+    		motor_stopped = 1;
+    		freno_stopped = 1;
     	}
     }
     else if(time_sample != 0){
